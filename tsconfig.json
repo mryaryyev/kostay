@@ -4,7 +4,8 @@
 		"moduleResolution": "nodenext",
 		"resolvePackageJsonExports": true,
 		"esModuleInterop": true,
-		"isolatedModules": true,
+		"isolatedModules": false, // <-- false yapıldı
+		"strictPropertyInitialization": false,
 		"declaration": true,
 		"removeComments": true,
 		"emitDecoratorMetadata": true,
