@@ -31,7 +31,8 @@ export default tseslint.config(
 			'@typescript-eslint/no-unsafe-argument': 'off', // degistirildi (want => off)
 			'@typescript-eslint/no-unsafe-assignment': 'off', // ekle
 			'@typescript-eslint/no-unsafe-member-access': 'off', // ekle
-			'prettier/prettier': ['error', { endOfLine: 'auto' }],
+			//'prettier/prettier': ['error', { endOfLine: 'auto' }],
+			'prettier/prettier': 'off',
 		},
 	},
 );
