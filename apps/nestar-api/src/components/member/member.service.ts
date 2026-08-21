@@ -55,4 +55,12 @@ export class MemberService {
 	public async getMember(): Promise<string> {
 		return await Promise.resolve('getMember executed');
 	}
+
+	public async getAllMembersByAdmin(): Promise<string> {
+		return await Promise.resolve('getAllMembersByAdmin executed');
+	}
+
+	public async updateMembersByAdmin(): Promise<string> {
+		return await Promise.resolve('updateMembersByAdmin executed');
+	}
 }
