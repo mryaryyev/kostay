@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-base-to-string */
 import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { MemberService } from './member.service';
 import { LoginInput, MemberInput } from '../../libs/dto/member/member.input';
@@ -10,6 +11,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { MemberType } from '../../libs/enums/member.enum';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { MemberUpdate } from '../../libs/dto/member/member.update';
+import { shapeIntoMongoObjectId } from '../../libs/config';
 
 @Resolver()
 export class MemberResolver {
@@ -42,7 +44,7 @@ export class MemberResolver {
 	@Query(() => String)
 	public checkAuthRoles(@AuthMember() authMember: Member): string {
 		console.log('Query: checkAuthRoles');
-		return `Hi ${authMember.memberNick}, you are ${authMember.memberType} (memberId: ${authMember._id})`;
+		return `Hi ${authMember.memberNick}, you are ${authMember.memberType} (memberId: ${authMember._id.toString()})`;
 	}
 
 	// Authenticated
@@ -57,10 +59,11 @@ export class MemberResolver {
 		return await this.memberService.updateMember(memberId, input);
 	}
 
-	@Query(() => String)
-	public async getMember(): Promise<string> {
+	@Query(() => Member)
+	public async getMember(@Args('memberId') input: string): Promise<Member> {
 		console.log('Query: getMember');
-		return await this.memberService.getMember();
+		const targetId = shapeIntoMongoObjectId(input);
+		return await this.memberService.getMember(targetId);
 	}
 
 	/** ADMIN */
