@@ -20,7 +20,10 @@ import { T } from './libs/types/common';
 			formatError: (error: T) => {
 				const graphQLFormattedError = {
 					message:
-						error?.extensions?.exception?.response?.message || error?.extensions?.response?.message || error?.message,
+						error?.extensions?.exception?.response?.message ||
+						error?.extensions?.response?.message ||
+						error?.extensions.originalError ||
+						error?.message,
 					extensions: {
 						code: error?.extensions?.code,
 					},
