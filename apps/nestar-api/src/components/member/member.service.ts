@@ -10,15 +10,16 @@ import {
 	AgentsInquiry,
 	LoginInput,
 	MemberInput,
+	MembersInquiry,
 } from '../../libs/dto/member/member.input';
 import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
 import { Direction, Message } from '../../libs/enums/common.enum';
 import { AuthService } from '../auth/auth.service';
 import { MemberUpdate } from '../../libs/dto/member/member.update';
 import { ViewService } from '../view/view.service';
-import { T } from '../../libs/types/common';
 import { ViewInput } from '../../libs/dto/view/view.input';
 import { ViewGroup } from '../../libs/enums/view.enum';
+import { T } from '../../libs/types/common';
 
 @Injectable()
 export class MemberService {
@@ -138,11 +139,38 @@ export class MemberService {
 		return result[0];
 	}
 
-	public async getAllMembersByAdmin(): Promise<string> {
-		return await Promise.resolve('getAllMembersByAdmin executed');
+	public async getAllMembersByAdmin(input: MembersInquiry): Promise<Members> {
+		const { memberStatus, memberType, text } = input.search;
+		const match: T = {};
+		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
+
+		if (memberStatus) match.memberStatus = memberStatus;
+		if (memberType) match.memberType = memberType;
+		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
+		console.log('match:', match);
+
+		const result = await this.memberModel
+			.aggregate([
+				{ $match: match },
+				{ $sort: sort },
+				{
+					$facet: {
+						list: [{ $skip: (input.page - 1) * input.limit }, { $limit: input.limit }],
+						metaCounter: [{ $count: 'total' }],
+					},
+				},
+			])
+			.exec();
+		//console.log('result:', result);
+		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		return result[0];
 	}
 
-	public async updateMembersByAdmin(): Promise<string> {
-		return await Promise.resolve('updateMembersByAdmin executed');
+	public async updateMembersByAdmin(input: MemberUpdate): Promise<Member> {
+		const result = await this.memberModel
+			.findOneAndUpdate({ _id: input._id }, input, { new: true })
+			.exec();
+		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		return result;
 	}
 }
