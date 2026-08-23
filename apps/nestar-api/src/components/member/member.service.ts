@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+	BadRequestException,
+	Injectable,
+	InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { Member } from '../../libs/dto/member/member';
@@ -7,13 +11,17 @@ import { MemberStatus } from '../../libs/enums/member.enum';
 import { Message } from '../../libs/enums/common.enum';
 import { AuthService } from '../auth/auth.service';
 import { MemberUpdate } from '../../libs/dto/member/member.update';
+import { ViewService } from '../view/view.service';
 import { T } from '../../libs/types/common';
+import { ViewInput } from '../../libs/dto/view/view.input';
+import { ViewGroup } from '../../libs/enums/view.enum';
 
 @Injectable()
 export class MemberService {
 	constructor(
 		@InjectModel('Member') private readonly memberModel: Model<Member>,
 		private authService: AuthService,
+		private viewService: ViewService,
 	) {}
 
 	public async signup(input: MemberInput): Promise<Member> {
@@ -32,7 +40,10 @@ export class MemberService {
 
 	public async login(input: LoginInput): Promise<Member> {
 		const { memberNick, memberPassword } = input;
-		const response = await this.memberModel.findOne({ memberNick: memberNick }).select('+memberPassword').exec();
+		const response = await this.memberModel
+			.findOne({ memberNick: memberNick })
+			.select('+memberPassword')
+			.exec();
 
 		if (!response || response.memberStatus === MemberStatus.DELETE) {
 			throw new InternalServerErrorException(Message.NO_MEMBER_NICK);
@@ -41,7 +52,10 @@ export class MemberService {
 		}
 
 		// TODO: Compare password
-		const isMatch = await this.authService.comparePassword(memberPassword, response.memberPassword!);
+		const isMatch = await this.authService.comparePassword(
+			memberPassword,
+			response.memberPassword!,
+		);
 		if (!isMatch) throw new InternalServerErrorException(Message.WRONG_PASSWORD);
 
 		// TODO: Authentication via TOKEN
@@ -52,7 +66,9 @@ export class MemberService {
 
 	public async updateMember(memberId: ObjectId, input: MemberUpdate): Promise<Member> {
 		const result = await this.memberModel
-			.findOneAndUpdate({ _id: memberId, memberStatus: MemberStatus.ACTIVE }, input, { new: true })
+			.findOneAndUpdate({ _id: memberId, memberStatus: MemberStatus.ACTIVE }, input, {
+				new: true,
+			})
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
@@ -60,15 +76,32 @@ export class MemberService {
 		return result;
 	}
 
-	public async getMember(targetId: ObjectId): Promise<Member> {
+	public async getMember(memberId: ObjectId, targetId: ObjectId): Promise<Member> {
 		const search: T = {
 			_id: targetId,
 			memberStatus: {
 				$in: [MemberStatus.ACTIVE, MemberStatus.BLOCK],
 			},
 		};
-		const targetMember = await this.memberModel.findOne(search).exec();
+		const targetMember = await this.memberModel.findOne(search).lean().exec();
 		if (!targetMember) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+
+		if (memberId) {
+			// record view
+			const viewInput: ViewInput = {
+				memberId: memberId,
+				viewRefId: targetId,
+				viewGroup: ViewGroup.MEMBER,
+			};
+			const newView = await this.viewService.recordView(viewInput);
+			if (newView) {
+				// increase memberView
+				await this.memberModel
+					.findOneAndUpdate(search, { $inc: { memberViews: 1 } }, { new: true })
+					.exec();
+				targetMember.memberViews++;
+			}
+		}
 
 		return targetMember;
 	}
