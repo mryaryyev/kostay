@@ -81,7 +81,7 @@ export class MemberService {
 		return result;
 	}
 
-	public async getMember(memberId: ObjectId, targetId: ObjectId): Promise<Member> {
+	public async getMember(memberId: ObjectId | null, targetId: ObjectId): Promise<Member> {
 		const search: T = {
 			_id: targetId,
 			memberStatus: {
@@ -174,7 +174,7 @@ export class MemberService {
 		return result;
 	}
 
-	public async memberStatsEditor(input: StatisticModifier): Promise<Member> {
+	public async memberStatsEditor(input: StatisticModifier): Promise<Member | null> {
 		console.log('executed');
 		const { _id, targetKey, modifier } = input;
 		return await this.memberModel.findOneAndUpdate(

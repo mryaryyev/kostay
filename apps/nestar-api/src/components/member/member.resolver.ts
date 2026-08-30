@@ -115,7 +115,7 @@ export class MemberResolver {
 	/** UPLOADER */
 
 	@UseGuards(AuthGuard)
-	@Mutation((returns) => String)
+	@Mutation(() => String)
 	public async imageUploader(
 		@Args({ name: 'file', type: () => GraphQLUpload })
 		{ createReadStream, filename, mimetype }: FileUpload,
@@ -143,7 +143,7 @@ export class MemberResolver {
 	}
 
 	@UseGuards(AuthGuard)
-	@Mutation((returns) => [String])
+	@Mutation(() => [String])
 	public async imagesUploader(
 		@Args('files', { type: () => [GraphQLUpload] })
 		files: Promise<FileUpload>[],
@@ -151,9 +151,9 @@ export class MemberResolver {
 	): Promise<string[]> {
 		console.log('Mutation: imagesUploader');
 
-		const uploadedImages = [];
+		const uploadedImages: string[] = [];
 		const promisedList = files.map(
-			async (img: Promise<FileUpload>, index: number): Promise<Promise<void>> => {
+			async (img: Promise<FileUpload>, index: number): Promise<void> => {
 				try {
 					const { filename, mimetype, encoding, createReadStream } = await img;
 
