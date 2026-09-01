@@ -122,7 +122,7 @@ export class MemberService {
 		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
 		console.log('match:', match);
 
-		const result = await this.memberModel
+		const result: Members[] = await this.memberModel
 			.aggregate([
 				{ $match: match },
 				{ $sort: sort },
@@ -149,7 +149,7 @@ export class MemberService {
 		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
 		console.log('match:', match);
 
-		const result = await this.memberModel
+		const result: Members[] = await this.memberModel
 			.aggregate([
 				{ $match: match },
 				{ $sort: sort },
@@ -177,7 +177,7 @@ export class MemberService {
 	public async memberStatsEditor(input: StatisticModifier): Promise<Member | null> {
 		console.log('executed');
 		const { _id, targetKey, modifier } = input;
-		return await this.memberModel.findOneAndUpdate(
+		return await this.memberModel.findByIdAndUpdate(
 			_id,
 			{
 				$inc: { [targetKey]: modifier },
