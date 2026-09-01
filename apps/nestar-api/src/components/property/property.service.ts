@@ -84,13 +84,6 @@ export class PropertyService {
 		return targetProperty;
 	}
 
-	public async propertyStatsEditor(input: StatisticModifier): Promise<Property | null> {
-		const { _id, targetKey, modifier } = input;
-		return await this.propertyModel
-			.findByIdAndUpdate(_id, { $inc: { [targetKey]: modifier } }, { new: true })
-			.exec();
-	}
-
 	public async updateProperty(
 		memberId: ObjectId,
 		input: PropertyUpdate,
@@ -137,7 +130,7 @@ export class PropertyService {
 		this.shapeMatchQuery(match, input);
 		console.log('match:', match);
 
-		const result = await this.propertyModel
+		const result: Properties[] = await this.propertyModel
 			.aggregate([
 				{ $match: match },
 				{ $sort: sort },
@@ -157,7 +150,7 @@ export class PropertyService {
 			.exec();
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
-		return result[0] as Properties;
+		return result[0];
 	}
 
 	private shapeMatchQuery(match: T, input: PropertiesInquiry): void {
@@ -208,7 +201,7 @@ export class PropertyService {
 		};
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
-		const result = await this.propertyModel
+		const result: Properties[] = await this.propertyModel
 			.aggregate([
 				{ $match: match },
 				{ $sort: sort },
@@ -227,7 +220,7 @@ export class PropertyService {
 			.exec();
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
-		return result[0] as Properties;
+		return result[0];
 	}
 
 	public async getAllPropertiesByAdmin(input: AllPropertiesInquiry): Promise<Properties> {
@@ -238,7 +231,7 @@ export class PropertyService {
 		if (propertyStatus) match.propertyStatus = propertyStatus;
 		if (propertyLocationList) match.propertyLocation = { $in: propertyLocationList };
 
-		const result = await this.propertyModel
+		const result: Properties[] = await this.propertyModel
 			.aggregate([
 				{ $match: match },
 				{ $sort: sort },
@@ -257,7 +250,7 @@ export class PropertyService {
 			.exec();
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
-		return result[0] as Properties;
+		return result[0];
 	}
 
 	public async updatePropertyByAdmin(input: PropertyUpdate): Promise<Property> {
@@ -302,5 +295,12 @@ export class PropertyService {
 		if (!result) throw new InternalServerErrorException(Message.REMOVE_FAILED);
 
 		return result;
+	}
+
+	public async propertyStatsEditor(input: StatisticModifier): Promise<Property | null> {
+		const { _id, targetKey, modifier } = input;
+		return await this.propertyModel
+			.findByIdAndUpdate(_id, { $inc: { [targetKey]: modifier } }, { new: true })
+			.exec();
 	}
 }
