@@ -64,6 +64,7 @@ export class PropertyService {
 		if (!targetProperty) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		if (memberId) {
+			// record view
 			const viewInput = {
 				memberId: memberId,
 				viewRefId: propertyId,
@@ -71,6 +72,7 @@ export class PropertyService {
 			};
 			const newView = await this.viewService.recordView(viewInput);
 			if (newView) {
+				// increase propertyViews
 				await this.propertyStatsEditor({
 					_id: propertyId,
 					targetKey: 'propertyViews',
@@ -79,6 +81,12 @@ export class PropertyService {
 				targetProperty.propertyViews++;
 			}
 			// meLiked
+			const likeInput = {
+				memberId: memberId,
+				likeRefId: propertyId,
+				likeGroup: LikeGroup.PROPERTY,
+			};
+			targetProperty.meLiked = await this.likeService.checkLikeExistence(likeInput);
 		}
 
 		targetProperty.memberData = await this.memberService.getMember(
