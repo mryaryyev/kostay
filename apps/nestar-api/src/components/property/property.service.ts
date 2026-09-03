@@ -239,7 +239,7 @@ export class PropertyService {
 		memberId: ObjectId,
 		likeRefId: ObjectId,
 	): Promise<Property> {
-		const target: Property = await this.propertyModel
+		const target = await this.propertyModel
 			.findOne({ _id: likeRefId, propertyStatus: PropertyStatus.ACTIVE })
 			.exec();
 		if (!target) throw new InternalServerErrorException(Message.NO_DATA_FOUND);

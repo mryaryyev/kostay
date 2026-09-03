@@ -170,7 +170,7 @@ export class BoardArticleService {
 		memberId: ObjectId,
 		likeRefId: ObjectId,
 	): Promise<BoardArticle> {
-		const target: BoardArticle = await this.boardArticleModel
+		const target: BoardArticle | null = await this.boardArticleModel
 			.findOne({ _id: likeRefId, articleStatus: BoardArticleStatus.ACTIVE })
 			.exec();
 		if (!target) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
