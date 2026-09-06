@@ -68,7 +68,7 @@ export class LikeService {
 						list: [
 							{ $skip: (page - 1) * limit },
 							{ $limit: limit },
-							lookupFavorite,
+							lookupFavorite, // agent info (who created this property)
 							{ $unwind: '$favoriteProperty.memberData' },
 						],
 						metaCounter: [{ $count: 'total' }],
@@ -78,6 +78,7 @@ export class LikeService {
 			.exec();
 
 		const result: Properties = { list: [], metaCounter: data[0].metaCounter };
+		// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return
 		result.list = data[0].list.map((ele) => ele.favoriteProperty);
 
 		return result;

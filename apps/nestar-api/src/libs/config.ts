@@ -91,7 +91,7 @@ export const lookupAuthMemberFollowed = (input: LookupAuthMemberFollowed) => {
 			from: 'follows',
 			let: {
 				localFollowerId: followerId,
-				localFollowingId: followingId,
+				localFollowingId: followingId, //"$followingId"
 				localMyFavorite: true,
 			},
 			pipeline: [
@@ -152,5 +152,14 @@ export const lookupFavorite = {
 		localField: 'favoriteProperty.memberId',
 		foreignField: '_id',
 		as: 'favoriteProperty.memberData',
+	},
+};
+
+export const lookupVisit = {
+	$lookup: {
+		from: 'members',
+		localField: 'visitedProperty.memberId',
+		foreignField: '_id',
+		as: 'visitedProperty.memberData',
 	},
 };
