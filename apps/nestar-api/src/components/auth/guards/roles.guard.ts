@@ -1,7 +1,13 @@
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
 /* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { BadRequestException, CanActivate, ExecutionContext, Injectable, ForbiddenException } from '@nestjs/common';
+import {
+	BadRequestException,
+	CanActivate,
+	ExecutionContext,
+	Injectable,
+	ForbiddenException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthService } from '../auth.service';
 import { Message } from '../../../libs/enums/common.enum';
@@ -29,7 +35,8 @@ export class RolesGuard implements CanActivate {
 				hasRole = () => roles.indexOf(authMember.memberType) > -1,
 				hasPermission: boolean = hasRole();
 
-			if (!authMember || !hasPermission) throw new ForbiddenException(Message.ONLY_SPECIFIC_ROLES_ALLOWED);
+			if (!authMember || !hasPermission)
+				throw new ForbiddenException(Message.ONLY_SPECIFIC_ROLES_ALLOWED);
 
 			console.log('memberNick[roles] =>', authMember.memberNick);
 			request.body.authMember = authMember;
@@ -37,6 +44,6 @@ export class RolesGuard implements CanActivate {
 		}
 
 		// description => http, rpc, gprs and etc are ignored
-		return false
+		return false;
 	}
 }
