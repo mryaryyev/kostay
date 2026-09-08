@@ -6,7 +6,10 @@ import { Connection, ConnectionStates } from 'mongoose';
 	imports: [
 		MongooseModule.forRootAsync({
 			useFactory: () => ({
-				uri: process.env.NODE_ENV === 'production' ? process.env.MONGO_PROD : process.env.MONGO_DEV,
+				uri:
+					process.env.NODE_ENV === 'production'
+						? process.env.MONGO_PROD
+						: process.env.MONGO_DEV,
 			}),
 		}),
 	],
