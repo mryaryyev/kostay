@@ -11,6 +11,11 @@ export class SocketGateway implements OnGatewayInit {
 		this.logger.log(`WebSocket Server Initialized total: ${this.summaryClient}`);
 	}
 
+	@SubscribeMessage('message')
+	public handleMessage(client: WebSocket, payload: any): string {
+		return 'Hello world!';
+	}
+
 	handleConnection(client: WebSocket, ...args: any[]) {
 		this.summaryClient++;
 		this.logger.log(`=== Client connected total: ${this.summaryClient} ===`);
@@ -19,10 +24,5 @@ export class SocketGateway implements OnGatewayInit {
 	handleDisconnect(client: WebSocket) {
 		this.summaryClient--;
 		this.logger.log(`=== Client disconnected left total: ${this.summaryClient} ===`);
-	}
-
-	@SubscribeMessage('message')
-	public handleMessage(client: WebSocket, payload: any): string {
-		return 'Hello world!';
 	}
 }
