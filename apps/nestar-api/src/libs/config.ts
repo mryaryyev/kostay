@@ -14,13 +14,13 @@ export const availableMemberSorts = [
 	'memberViews',
 ];
 export const availableOptions = ['propertyBarter', 'propertyRent'];
-export const availablePropertySorts = [
+export const availableBoardArticleSorts = [
 	'createdAt',
 	'updatedAt',
 	'articleLikes',
 	'articleViews',
 ];
-export const availableBoardArticleSorts = [
+export const availablePropertySorts = [
 	'createdAt',
 	'updatedAt',
 	'propertyLikes',
