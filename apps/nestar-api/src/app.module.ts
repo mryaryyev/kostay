@@ -23,7 +23,7 @@ import { SocketModule } from './socket/socket.module';
 					message:
 						error?.extensions?.exception?.response?.message ||
 						error?.extensions?.response?.message ||
-						error?.extensions.originalError ||
+						error?.extensions.originalError?.message ||
 						error?.message,
 					extensions: {
 						code: error?.extensions?.code,
