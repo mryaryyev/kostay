@@ -129,6 +129,7 @@ export class PropertyResolver {
 		@Args('input') input: PropertyUpdate,
 	): Promise<Property> {
 		console.log('Mutation: updatePropertyByAdmin');
+		input._id = shapeIntoMongoObjectId(input._id);
 		return await this.propertyService.updatePropertyByAdmin(input);
 	}
 

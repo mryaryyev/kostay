@@ -1,6 +1,14 @@
 # Next.js frontend migration plan
 
-Status: planned, not implemented. No Next.js frontend source was inspected in this session. The backend currently uses Kostay branding while retaining Nestar domain contracts. The mappings below are conceptual, not claims about existing frontend filenames or routes.
+Status: planned, not implemented. No Next.js frontend source was inspected in this session. The backend uses Kostay branding; property contracts changed in Phase 1 (see below). The mappings below are conceptual, not claims about existing frontend filenames or routes.
+
+## Property contract update (Phase 1)
+
+- `propertyPrice` → `pricePerNight`; required `maxGuests` on create.
+- Removed `propertyRent`, `propertyBarter`, `soldAt`, `search.options`, `search.periodsRange`.
+- `SOLD` → `INACTIVE`; sort key `propertyPrice` → `pricePerNight`.
+- New optional filter `search.guestsCount`.
+- Regenerate GraphQL types on the client.
 
 ## Step-by-step migration
 
@@ -14,43 +22,43 @@ Status: planned, not implemented. No Next.js frontend source was inspected in th
 
 ## Conceptual page/component mappings
 
-| Nestar concept (unverified frontend) | Branding phase destination | Future booking proposal |
-|---|---|---|
-| Home, site header, footer, metadata | Same pages/components with Kostay branding | Accommodation discovery after listing capabilities exist |
-| Property list and filters | Same route and property contract | Date/guest-aware stay search |
-| Property detail/card | Same data and price meaning | Stay detail/card with availability and nightly rate |
-| Agent directory/profile | Keep existing role behavior and agent terminology | Host profiles after role/capability design |
-| Agent property-management screen | Same CRUD and permissions | Host listing/calendar management |
-| Favorites and visited listings | Same property references and operations | Saved accommodations after domain migration |
-| Login/signup/profile | Same member/authentication contract | Guest/host onboarding if approved |
-| Articles/comments/community | Same workflows | Separately decide retention and verified-review feature |
-| Admin screens | Same permissions and operations | Reservation oversight only after backend support |
-| No verified reservation screen | No addition in branding phase | Trips, booking detail, checkout/request flow; routes undecided |
+| Nestar concept (unverified frontend) | Branding phase destination                        | Future booking proposal                                        |
+| ------------------------------------ | ------------------------------------------------- | -------------------------------------------------------------- |
+| Home, site header, footer, metadata  | Same pages/components with Kostay branding        | Accommodation discovery after listing capabilities exist       |
+| Property list and filters            | Same route and property contract                  | Date/guest-aware stay search                                   |
+| Property detail/card                 | Same data and price meaning                       | Stay detail/card with availability and nightly rate            |
+| Agent directory/profile              | Keep existing role behavior and agent terminology | Host profiles after role/capability design                     |
+| Agent property-management screen     | Same CRUD and permissions                         | Host listing/calendar management                               |
+| Favorites and visited listings       | Same property references and operations           | Saved accommodations after domain migration                    |
+| Login/signup/profile                 | Same member/authentication contract               | Guest/host onboarding if approved                              |
+| Articles/comments/community          | Same workflows                                    | Separately decide retention and verified-review feature        |
+| Admin screens                        | Same permissions and operations                   | Reservation oversight only after backend support               |
+| No verified reservation screen       | No addition in branding phase                     | Trips, booking detail, checkout/request flow; routes undecided |
 
 ## GraphQL query/mutation rename plan
 
 **Branding-phase rename plan: none; every field below maps to itself.** Names were verified in backend resolvers, not in frontend documents. Do not rename `getAgents` to `getHosts`, or `createProperty` to a booking mutation, without a separately approved backend contract.
 
-| Resolver area | Queries retained | Mutations retained |
-|---|---|---|
-| App | `sayHello` | None |
-| Member | `checkAuth`, `checkAuthRoles`, `getMember`, `getAgents`, `getAllMembersByAdmin` | `signup`, `login`, `updateMember`, `likeTargetMember`, `updateMembersByAdmin`, `imageUploader`, `imagesUploader` |
-| Property | `getProperty`, `getProperties`, `getFavorites`, `getVisited`, `getAgentProperties`, `getAllPropertiesByAdmin` | `createProperty`, `updateProperty`, `likeTargetProperty`, `updatePropertyByAdmin`, `removePropertyByAdmin` |
-| Board article | `getBoardArticle`, `getBoardArticles`, `getAllBoardArticlesByAdmin` | `createBoardArticle`, `updateBoardArticle`, `likeTargetBoardArticle`, `updateBoardArticleByAdmin`, `removeBoardArticleByAdmin` |
-| Comment | `getComments` | `createComment`, `updateComment`, `removeCommentByAdmin` |
-| Follow | `getMemberFollowings`, `getMemberFollowers` | `subscribe`, `unsubscribe` |
+| Resolver area | Queries retained                                                                                              | Mutations retained                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| App           | `sayHello`                                                                                                    | None                                                                                                                           |
+| Member        | `checkAuth`, `checkAuthRoles`, `getMember`, `getAgents`, `getAllMembersByAdmin`                               | `signup`, `login`, `updateMember`, `likeTargetMember`, `updateMembersByAdmin`, `imageUploader`, `imagesUploader`               |
+| Property      | `getProperty`, `getProperties`, `getFavorites`, `getVisited`, `getAgentProperties`, `getAllPropertiesByAdmin` | `createProperty`, `updateProperty`, `likeTargetProperty`, `updatePropertyByAdmin`, `removePropertyByAdmin`                     |
+| Board article | `getBoardArticle`, `getBoardArticles`, `getAllBoardArticlesByAdmin`                                           | `createBoardArticle`, `updateBoardArticle`, `likeTargetBoardArticle`, `updateBoardArticleByAdmin`, `removeBoardArticleByAdmin` |
+| Comment       | `getComments`                                                                                                 | `createComment`, `updateComment`, `removeCommentByAdmin`                                                                       |
+| Follow        | `getMemberFollowings`, `getMemberFollowers`                                                                   | `subscribe`, `unsubscribe`                                                                                                     |
 
 Source: [API components](../apps/kostay-api/src/components) and [app resolver](../apps/kostay-api/src/app.resolver.ts). Availability search, booking quotes, reservation creation/cancellation, and guest/host reservation lists are proposed capabilities; their operation names, inputs, outputs, and error contracts remain undecided and unimplemented.
 
 ## UI terminology
 
-| Before | After | Status / constraint |
-|---|---|---|
-| Nestar | Kostay | Safe branding substitution |
-| Agent | Host | Future domain work; preserve AGENT authorization until redesigned |
-| Property | Stay / accommodation | Proposed product vocabulary; does not rename GraphQL Property |
-| Sale price | Nightly rate | Future pricing model; existing amounts must not simply be relabeled |
-| Sold | Unavailable / archived | No approved equivalent; listing lifecycle differs from booked dates |
-| Comment | Verified stay review | Separate feature requiring booking eligibility, not a label-only replacement |
+| Before     | After                  | Status / constraint                                                          |
+| ---------- | ---------------------- | ---------------------------------------------------------------------------- |
+| Nestar     | Kostay                 | Safe branding substitution                                                   |
+| Agent      | Host                   | Future domain work; preserve AGENT authorization until redesigned            |
+| Property   | Stay / accommodation   | Proposed product vocabulary; does not rename GraphQL Property                |
+| Sale price | Nightly rate           | Future pricing model; existing amounts must not simply be relabeled          |
+| Sold       | Unavailable / archived | No approved equivalent; listing lifecycle differs from booked dates          |
+| Comment    | Verified stay review   | Separate feature requiring booking eligibility, not a label-only replacement |
 
 Acceptance for the branding phase: verified brand changes, no contract/route regression, passing available checks or clearly documented baseline failures, and no UI promise of unsupported booking functionality. See [decisions](DECISIONS.md).

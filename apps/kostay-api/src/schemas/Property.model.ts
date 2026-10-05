@@ -1,5 +1,9 @@
 import { Schema } from 'mongoose';
-import { PropertyLocation, PropertyStatus, PropertyType } from '../libs/enums/property.enum';
+import {
+	PropertyLocation,
+	PropertyStatus,
+	PropertyType,
+} from '../libs/enums/property.enum';
 
 const PropertySchema = new Schema(
 	{
@@ -31,7 +35,7 @@ const PropertySchema = new Schema(
 			required: true,
 		},
 
-		propertyPrice: {
+		pricePerNight: {
 			type: Number,
 			required: true,
 		},
@@ -47,6 +51,11 @@ const PropertySchema = new Schema(
 		},
 
 		propertyRooms: {
+			type: Number,
+			required: true,
+		},
+
+		maxGuests: {
 			type: Number,
 			required: true,
 		},
@@ -80,24 +89,10 @@ const PropertySchema = new Schema(
 			type: String,
 		},
 
-		propertyBarter: {
-			type: Boolean,
-			default: false,
-		},
-
-		propertyRent: {
-			type: Boolean,
-			default: false,
-		},
-
 		memberId: {
 			type: Schema.Types.ObjectId,
 			required: true,
 			ref: 'Member',
-		},
-
-		soldAt: {
-			type: Date,
 		},
 
 		deletedAt: {
@@ -111,6 +106,13 @@ const PropertySchema = new Schema(
 	{ timestamps: true, collection: 'properties' },
 );
 
-PropertySchema.index({ propertyType: 1, propertyLocation: 1, propertyTitle: 1, propertyPrice: 1 }, { unique: true });
+PropertySchema.index({
+	propertyStatus: 1,
+	propertyLocation: 1,
+	propertyType: 1,
+	pricePerNight: 1,
+});
+PropertySchema.index({ propertyStatus: 1, pricePerNight: 1 });
+PropertySchema.index({ memberId: 1, propertyStatus: 1 });
 
 export default PropertySchema;

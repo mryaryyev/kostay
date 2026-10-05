@@ -6,7 +6,7 @@ import {
 	PropertyType,
 } from '../../enums/property.enum';
 import { ObjectId } from 'mongoose';
-import { availableOptions, availablePropertySorts } from '../../config';
+import { availablePropertySorts } from '../../config';
 import { Direction } from '../../enums/common.enum';
 
 @InputType()
@@ -31,7 +31,11 @@ export class PropertyInput {
 
 	@IsNotEmpty()
 	@Field(() => Number)
-	propertyPrice: number;
+	pricePerNight: number;
+
+	@IsNotEmpty()
+	@Field(() => Int)
+	maxGuests: number;
 
 	@IsNotEmpty()
 	@Field(() => Number)
@@ -57,14 +61,6 @@ export class PropertyInput {
 	@Length(5, 500)
 	@Field(() => String, { nullable: true })
 	propertyDesc?: string;
-
-	@IsOptional()
-	@Field(() => Boolean, { nullable: true })
-	propertyBarter?: boolean;
-
-	@IsOptional()
-	@Field(() => Boolean, { nullable: true })
-	propertyRent?: boolean;
 
 	memberId?: ObjectId;
 
@@ -92,15 +88,6 @@ export class SquaresRange {
 }
 
 @InputType()
-export class PeriodsRange {
-	@Field(() => Date)
-	start: Date;
-
-	@Field(() => Date)
-	end: Date;
-}
-
-@InputType()
 class PISearch {
 	@IsOptional()
 	@Field(() => String, { nullable: true })
@@ -123,17 +110,12 @@ class PISearch {
 	bedsList?: number[];
 
 	@IsOptional()
-	@IsIn(availableOptions, { each: true })
-	@Field(() => [String], { nullable: true })
-	options?: string[];
+	@Field(() => Int, { nullable: true })
+	guestsCount?: number;
 
 	@IsOptional()
 	@Field(() => PricesRange, { nullable: true })
 	pricesRange?: PricesRange;
-
-	@IsOptional()
-	@Field(() => PeriodsRange, { nullable: true })
-	periodsRange?: PeriodsRange;
 
 	@IsOptional()
 	@Field(() => SquaresRange, { nullable: true })

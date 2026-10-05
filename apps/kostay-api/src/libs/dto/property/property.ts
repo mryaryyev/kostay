@@ -29,7 +29,10 @@ export class Property {
 	propertyTitle: string;
 
 	@Field(() => Number)
-	propertyPrice: number;
+	pricePerNight: number;
+
+	@Field(() => Int)
+	maxGuests: number;
 
 	@Field(() => Number)
 	propertySquare: number;
@@ -58,23 +61,14 @@ export class Property {
 	@Field(() => String, { nullable: true })
 	propertyDesc?: string;
 
-	@Field(() => Boolean)
-	propertyBarter: boolean;
-
-	@Field(() => Boolean)
-	propertyRent: boolean;
-
 	@Field(() => String)
 	memberId: ObjectId;
 
 	@Field(() => Date, { nullable: true })
-	soldAt?: Date;
+	constructedAt?: Date;
 
 	@Field(() => Date, { nullable: true })
 	deletedAt?: Date;
-
-	@Field(() => Date, { nullable: true })
-	constructedAt?: Date;
 
 	@Field(() => Date)
 	createdAt: Date;

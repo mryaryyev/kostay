@@ -13,7 +13,6 @@ export const availableMemberSorts = [
 	'memberLikes',
 	'memberViews',
 ];
-export const availableOptions = ['propertyBarter', 'propertyRent'];
 export const availableBoardArticleSorts = [
 	'createdAt',
 	'updatedAt',
@@ -26,7 +25,7 @@ export const availablePropertySorts = [
 	'propertyLikes',
 	'propertyViews',
 	'propertyRank',
-	'propertyPrice',
+	'pricePerNight',
 ];
 export const availableCommentSorts = ['createdAt', 'updatedAt'];
 
