@@ -10,6 +10,11 @@ import { Properties } from '../../libs/dto/property/property';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { lookupFavorite } from '../../libs/config';
 
+interface FavoriteAggregate {
+	list: { favoriteProperty: Properties['list'][number] }[];
+	metaCounter: Properties['metaCounter'];
+}
+
 @Injectable()
 export class LikeService {
 	constructor(@InjectModel('Like') private readonly likeModel: Model<Like>) {}
@@ -50,8 +55,8 @@ export class LikeService {
 		const { page, limit } = input;
 		const match: T = { likeGroup: LikeGroup.PROPERTY, memberId: memberId };
 
-		const data: T = await this.likeModel
-			.aggregate([
+		const data = await this.likeModel
+			.aggregate<FavoriteAggregate>([
 				{ $match: match },
 				{ $sort: { updatedAt: -1 } },
 				{
@@ -78,7 +83,6 @@ export class LikeService {
 			.exec();
 
 		const result: Properties = { list: [], metaCounter: data[0].metaCounter };
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return
 		result.list = data[0].list.map((ele) => ele.favoriteProperty);
 
 		return result;

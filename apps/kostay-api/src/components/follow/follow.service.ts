@@ -4,7 +4,7 @@ import {
 	InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, ObjectId } from 'mongoose';
+import { Model, ObjectId, Types } from 'mongoose';
 import { Follower, Followers, Following, Followings } from '../../libs/dto/follow/follow';
 import { MemberService } from '../member/member.service';
 import { Direction, Message } from '../../libs/enums/common.enum';
@@ -25,11 +25,11 @@ export class FollowService {
 	) {}
 
 	public async subscribe(followerId: ObjectId, followingId: ObjectId): Promise<Follower> {
-		// eslint-disable-next-line @typescript-eslint/no-base-to-string
-		if (followerId.toString() === followingId.toString()) {
+		const follower = followerId as unknown as Types.ObjectId;
+		const following = followingId as unknown as Types.ObjectId;
+		if (follower.equals(following)) {
 			throw new InternalServerErrorException(Message.SELF_SUBSCRIPTION_DENIED);
 		}
-
 		const targetMember = await this.memberService.getMember(null, followingId);
 		if (!targetMember) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
@@ -59,7 +59,7 @@ export class FollowService {
 				followerId: followerId,
 			});
 		} catch (err) {
-			console.log('Error, Service.model:', err instanceof Error ? err.message : err);
+			console.log('Error, Service.model:', err);
 			throw new BadRequestException(Message.CREATE_FAILED);
 		}
 	}

@@ -1,18 +1,30 @@
-/* eslint-disable @typescript-eslint/no-redundant-type-constituents */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-import { BadRequestException, CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+	BadRequestException,
+	CanActivate,
+	ExecutionContext,
+	Injectable,
+	UnauthorizedException,
+} from '@nestjs/common';
 import { AuthService } from '../auth.service';
 import { Message } from '../../../libs/enums/common.enum';
+import { GqlExecutionContext } from '@nestjs/graphql';
+
+interface AuthRequest {
+	headers: { authorization?: string };
+	body: { authMember?: { memberNick?: string } | null };
+}
 
 @Injectable()
 export class AuthGuard implements CanActivate {
 	constructor(private authService: AuthService) {}
 
-	async canActivate(context: ExecutionContext | any): Promise<boolean> {
+	async canActivate(context: ExecutionContext): Promise<boolean> {
 		console.info('--- @guard() Authentication [AuthGuard] ---');
 
-		if (context.contextType === 'graphql') {
-			const request = context.getArgByIndex(2).req;
+		if (context.getType<string>() === 'graphql') {
+			const request = GqlExecutionContext.create(context).getContext<{
+				req: AuthRequest;
+			}>().req;
 
 			const bearerToken = request.headers.authorization;
 			if (!bearerToken) throw new BadRequestException(Message.TOKEN_NOT_EXIST);
@@ -29,6 +41,6 @@ export class AuthGuard implements CanActivate {
 		}
 
 		// description => http, rpc, gprs and etc are ignored
-		return false
+		return false;
 	}
 }
