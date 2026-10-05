@@ -10,7 +10,7 @@ import { Member, Members } from '../../libs/dto/member/member';
 import { UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { AuthMember } from '../auth/decorators/authMember.decorator';
-import { ObjectId } from 'mongoose';
+import { ObjectId, Types } from 'mongoose';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { MemberType } from '../../libs/enums/member.enum';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -56,8 +56,8 @@ export class MemberResolver {
 	@Query(() => String)
 	public checkAuthRoles(@AuthMember() authMember: Member): string {
 		console.log('Query: checkAuthRoles');
-		// eslint-disable-next-line @typescript-eslint/no-base-to-string
-		return `Hi ${authMember.memberNick}, you are ${authMember.memberType} (memberId: ${authMember._id.toString()})`;
+		const memberId = (authMember._id as unknown as Types.ObjectId).toString();
+		return `Hi ${authMember.memberNick}, you are ${authMember.memberType} (memberId: ${memberId})`;
 	}
 
 	// Authenticated

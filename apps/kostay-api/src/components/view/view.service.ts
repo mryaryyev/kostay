@@ -3,11 +3,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
 import { View } from '../../libs/dto/view/view';
 import { ViewInput } from '../../libs/dto/view/view.input';
-import { T } from '../../libs/types/common';
 import { OrdinaryInquiry } from '../../libs/dto/property/property.input';
 import { Properties } from '../../libs/dto/property/property';
 import { ViewGroup } from '../../libs/enums/view.enum';
 import { lookupVisit } from '../../libs/config';
+
+interface VisitedAggregate {
+	list: { visitedProperty: Properties['list'][number] }[];
+	metaCounter: Properties['metaCounter'];
+}
 
 @Injectable()
 export class ViewService {
@@ -21,13 +25,13 @@ export class ViewService {
 		if (!viewExist) {
 			console.log('- New View Insert -');
 			return await this.viewModel.create(input);
-		} else return null;
+		}
 		return null;
 	}
 
 	private async checkViewExistence(input: ViewInput): Promise<View | null> {
 		const { memberId, viewRefId } = input;
-		const search: T = { memberId: memberId, viewRefId: viewRefId };
+		const search = { memberId: memberId, viewRefId: viewRefId };
 		return await this.viewModel.findOne(search).exec();
 	}
 
@@ -36,10 +40,10 @@ export class ViewService {
 		input: OrdinaryInquiry,
 	): Promise<Properties> {
 		const { page, limit } = input;
-		const match: T = { viewGroup: ViewGroup.PROPERTY, memberId: memberId };
+		const match = { viewGroup: ViewGroup.PROPERTY, memberId: memberId };
 
-		const data: T = await this.viewModel
-			.aggregate([
+		const data = await this.viewModel
+			.aggregate<VisitedAggregate>([
 				{ $match: match },
 				{ $sort: { updatedAt: -1 } },
 				{
@@ -66,7 +70,6 @@ export class ViewService {
 			.exec();
 
 		const result: Properties = { list: [], metaCounter: data[0].metaCounter };
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return
 		result.list = data[0].list.map((ele) => ele.visitedProperty);
 
 		return result;
