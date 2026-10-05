@@ -17,7 +17,8 @@ Use those files as the source of truth for AI Agent related migration history, a
 
 - Backend apps are `kostay-api` and `kostay-batch`.
 - Keep the existing NestJS resolver/service/module pattern based on MVC and DI.
-- Keep DTOs, enums, schemas under `apps/kostay-api/src/libs`.
+- Keep DTOs, enums under `apps/kostay-api/src/libs`.
+- Keep Mongoose schemas under `apps/kostay-api/src/schemas`.
 - Keep shared modules reusable: auth, member, like, view, comment, follow, board article, socket.
 
 ## Domain Rules
@@ -26,16 +27,15 @@ Use those files as the source of truth for AI Agent related migration history, a
 - Keep `MemberType.USER`, `MemberType.AGENT` and `MemberType.ADMIN` unchanged.
 - Property ownership continues to use `MemberType.AGENT` unless a later migration explicitly changes it.
 - Keep `PropertyType` and `PropertyLocation` enum values unchanged.
-- `PropertyStatus` enum values are:
-  - `PropertyStatus`: `ACTIVE`, `INACTIVE`, `DELETE`.
+- `PropertyStatus` enum values are `ACTIVE`, `INACTIVE`, `DELETE`.
 
 ## Workflow
 
 1. Analyze before editing.
 2. Keep changes small and consistent with existing project patterns.
 3. Do not remove working logic unless it is replaced safely.
-4. Update `docs/ai/COMPLETED_TASKS.md` after major completed work.
-5. Add or update focused tests when behavior changes.
+4. After a completed task, add at most 5-10 short bullet points to `docs/ai/COMPLETED_TASKS.md`. Do not create new documentation files.
+5. Do not add tests, fixtures, seed scripts or new files unless explicitly asked.
 
 ## Validation
 

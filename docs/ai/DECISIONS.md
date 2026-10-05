@@ -2,6 +2,17 @@
 
 Recorded October 4, 2026 (Asia/Seoul). Status distinguishes accepted choices from proposals and unresolved questions. This is a record of the session, not approval to implement future domain changes.
 
+## Phase 1 decisions (October 5)
+
+- Property stays the main entity, now meaning a rentable accommodation. Names and `PropertyType`/`PropertyLocation` values are unchanged.
+- `SOLD` is removed. `INACTIVE` means the host paused the listing; it does not mean rented.
+- Rented dates are not stored on the property. Availability will come from `bookings` in PostgreSQL (Phase 2); a booking never changes `propertyStatus`.
+- `memberProperties` counts non-deleted properties (ACTIVE + INACTIVE) and only decreases on DELETE.
+- No MongoDB transactions or sessions for now. Keep services simple.
+- `deletedAt` is set by the server, never sent by the client.
+- Fresh development data; no legacy data conversion or compatibility aliases.
+- This supersedes the "Preserve collections, schemas, and indexes" decision below for the property collection only.
+
 ## Accepted decisions
 
 | Decision | Status | Rationale | Risks / alternatives |

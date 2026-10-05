@@ -37,7 +37,11 @@ export class PropertyUpdate {
 
 	@IsOptional()
 	@Field(() => Number, { nullable: true })
-	propertyPrice?: number;
+	pricePerNight?: number;
+
+	@IsOptional()
+	@Field(() => Int, { nullable: true })
+	maxGuests?: number;
 
 	@IsOptional()
 	@Field(() => Number, { nullable: true })
@@ -63,18 +67,6 @@ export class PropertyUpdate {
 	@Length(5, 500)
 	@Field(() => String, { nullable: true })
 	propertyDesc?: string;
-
-	@IsOptional()
-	@Field(() => Boolean, { nullable: true })
-	propertyBarter?: boolean;
-
-	@IsOptional()
-	@Field(() => Boolean, { nullable: true })
-	propertyRent?: boolean;
-
-	soldAt?: Date;
-
-	deletedAt?: Date;
 
 	@IsOptional()
 	@Field(() => Date, { nullable: true })
