@@ -9,6 +9,8 @@ import { BookingService } from './booking.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { MemberType } from '../../libs/enums/member.enum';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { PaymentDto } from '../../libs/dto/payment/payment';
+import { PaymentInput } from '../../libs/dto/payment/payment.input';
 
 @Resolver()
 export class BookingResolver {
@@ -64,5 +66,15 @@ export class BookingResolver {
 	): Promise<BookingDto> {
 		console.log('Mutation: confirmBooking');
 		return await this.bookingService.confirmBooking(memberId, bookingId);
+	}
+
+	@UseGuards(AuthGuard)
+	@Mutation(() => PaymentDto)
+	public async createPayment(
+		@Args('input') input: PaymentInput,
+		@AuthMember('_id') memberId: ObjectId,
+	): Promise<PaymentDto> {
+		console.log('Mutation: createPayment');
+		return await this.bookingService.createPayment(memberId, input);
 	}
 }
