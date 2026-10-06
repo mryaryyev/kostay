@@ -1,5 +1,6 @@
 import { Field, Float, Int, ObjectType } from '@nestjs/graphql';
 import { BookingStatus } from '../../enums/booking.enum';
+import { PaymentStatus } from '../../enums/payment.enum';
 
 @ObjectType('Booking')
 export class BookingDto {
@@ -32,6 +33,9 @@ export class BookingDto {
 
 	@Field(() => Date)
 	updatedAt: Date;
+
+	@Field(() => PaymentStatus, { nullable: true })
+	paymentStatus?: PaymentStatus;
 }
 
 @ObjectType('Bookings')

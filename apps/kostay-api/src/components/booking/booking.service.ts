@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { InjectRepository } from '@nestjs/typeorm';
 import moment from 'moment';
 import { Model, ObjectId, Types } from 'mongoose';
-import { FindOptionsWhere, In, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
 import { Booking } from '../../database/postgres/entities/booking.entity';
 import { BookingDto, BookingsDto } from '../../libs/dto/booking/booking';
 import { BookingInput, BookingsInquiry } from '../../libs/dto/booking/booking.input';
@@ -12,12 +12,17 @@ import { Message } from '../../libs/enums/common.enum';
 import { BookingStatus } from '../../libs/enums/booking.enum';
 import { PropertyStatus } from '../../libs/enums/property.enum';
 import { shapeIntoMongoObjectId } from '../../libs/config';
+import { Payment } from '../../database/postgres/entities/payment.entity';
+import { PaymentStatus } from '../../libs/enums/payment.enum';
+import { PaymentInput } from '../../libs/dto/payment/payment.input';
+import { PaymentDto } from '../../libs/dto/payment/payment';
 
 @Injectable()
 export class BookingService {
 	constructor(
 		@InjectRepository(Booking) private readonly bookingRepository: Repository<Booking>,
 		@InjectModel('Property') private readonly propertyModel: Model<Property>,
+		private readonly dataSource: DataSource,
 	) {}
 
 	public async createBooking(
@@ -107,15 +112,26 @@ export class BookingService {
 
 	public async cancelBooking(memberId: ObjectId, bookingId: string): Promise<BookingDto> {
 		const guestId = (memberId as unknown as Types.ObjectId).toString();
-		const booking = await this.bookingRepository.findOne({
-			where: { id: bookingId, memberId: guestId },
-		});
-		if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
-		if (![BookingStatus.PENDING, BookingStatus.CONFIRMED].includes(booking.status))
-			throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
 
-		booking.status = BookingStatus.CANCELLED;
-		return await this.bookingRepository.save(booking);
+		return await this.dataSource.transaction(async (manager) => {
+			const booking = await manager.findOne(Booking, {
+				where: { id: bookingId, memberId: guestId },
+				lock: { mode: 'pessimistic_write' },
+			});
+			if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
+			if (![BookingStatus.PENDING, BookingStatus.CONFIRMED].includes(booking.status))
+				throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+
+			// full refund if the booking was already paid
+			await manager.update(
+				Payment,
+				{ bookingId: booking.id, status: PaymentStatus.SUCCEEDED },
+				{ status: PaymentStatus.REFUNDED },
+			);
+
+			booking.status = BookingStatus.CANCELLED;
+			return await manager.save(booking);
+		});
 	}
 
 	public async confirmBooking(
@@ -148,6 +164,50 @@ export class BookingService {
 			skip: (input.page - 1) * input.limit,
 			take: input.limit,
 		});
-		return { list, total };
+		return { list: await this.attachPaymentStatus(list), total };
+	}
+
+	public async createPayment(
+		memberId: ObjectId,
+		input: PaymentInput,
+	): Promise<PaymentDto> {
+		const guestId = (memberId as unknown as Types.ObjectId).toString();
+
+		return await this.dataSource.transaction(async (manager) => {
+			const booking = await manager.findOne(Booking, {
+				where: { id: input.bookingId, memberId: guestId },
+				lock: { mode: 'pessimistic_write' },
+			});
+			if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
+			if (booking.status !== BookingStatus.CONFIRMED)
+				throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+
+			const alreadyPaid = await manager.exists(Payment, {
+				where: { bookingId: booking.id, status: PaymentStatus.SUCCEEDED },
+			});
+			if (alreadyPaid) throw new BadRequestException('Booking is already paid');
+
+			const payment = manager.create(Payment, {
+				bookingId: booking.id,
+				amount: booking.totalPrice, // always from the server, never from the client
+				paymentMethod: input.paymentMethod,
+				status: PaymentStatus.SUCCEEDED, // simulated: no real payment gateway yet
+				paidAt: new Date(),
+			});
+			return await manager.save(payment);
+		});
+	}
+
+	private async attachPaymentStatus(bookings: Booking[]): Promise<BookingDto[]> {
+		if (!bookings.length) return [];
+
+		const payments = await this.dataSource.getRepository(Payment).find({
+			where: { bookingId: In(bookings.map((b) => b.id)) },
+			order: { createdAt: 'ASC' },
+		});
+		const latest = new Map<string, PaymentStatus>();
+		payments.forEach((p) => latest.set(p.bookingId, p.status)); // newest overwrites older
+
+		return bookings.map((b) => ({ ...b, paymentStatus: latest.get(b.id) }));
 	}
 }
