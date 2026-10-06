@@ -3,10 +3,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { InjectRepository } from '@nestjs/typeorm';
 import moment from 'moment';
 import { Model, ObjectId, Types } from 'mongoose';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, In, Repository } from 'typeorm';
 import { Booking } from '../../database/postgres/entities/booking.entity';
-import { BookingDto } from '../../libs/dto/booking/booking';
-import { BookingInput } from '../../libs/dto/booking/booking.input';
+import { BookingDto, BookingsDto } from '../../libs/dto/booking/booking';
+import { BookingInput, BookingsInquiry } from '../../libs/dto/booking/booking.input';
 import { Property } from '../../libs/dto/property/property';
 import { Message } from '../../libs/enums/common.enum';
 import { BookingStatus } from '../../libs/enums/booking.enum';
@@ -72,5 +72,82 @@ export class BookingService {
 			totalPrice: nights * property.pricePerNight,
 		});
 		return await this.bookingRepository.save(booking);
+	}
+
+	public async getMyBookings(
+		memberId: ObjectId,
+		input: BookingsInquiry,
+	): Promise<BookingsDto> {
+		const guestId = (memberId as unknown as Types.ObjectId).toString();
+		return await this.findBookings(
+			{ memberId: guestId, ...(input.status ? { status: input.status } : {}) },
+			input,
+		);
+	}
+
+	public async getHostBookings(
+		memberId: ObjectId,
+		input: BookingsInquiry,
+	): Promise<BookingsDto> {
+		const properties = await this.propertyModel
+			.find({ memberId })
+			.select('_id')
+			.lean()
+			.exec();
+		if (!properties.length) return { list: [], total: 0 };
+
+		const propertyIds = properties.map((p) =>
+			(p._id as unknown as Types.ObjectId).toString(),
+		);
+		return await this.findBookings(
+			{ propertyId: In(propertyIds), ...(input.status ? { status: input.status } : {}) },
+			input,
+		);
+	}
+
+	public async cancelBooking(memberId: ObjectId, bookingId: string): Promise<BookingDto> {
+		const guestId = (memberId as unknown as Types.ObjectId).toString();
+		const booking = await this.bookingRepository.findOne({
+			where: { id: bookingId, memberId: guestId },
+		});
+		if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
+		if (![BookingStatus.PENDING, BookingStatus.CONFIRMED].includes(booking.status))
+			throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+
+		booking.status = BookingStatus.CANCELLED;
+		return await this.bookingRepository.save(booking);
+	}
+
+	public async confirmBooking(
+		memberId: ObjectId,
+		bookingId: string,
+	): Promise<BookingDto> {
+		const booking = await this.bookingRepository.findOne({ where: { id: bookingId } });
+		if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
+		if (booking.status !== BookingStatus.PENDING)
+			throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+
+		// only the host of this property can confirm
+		const property = await this.propertyModel
+			.findOne({ _id: shapeIntoMongoObjectId(booking.propertyId), memberId })
+			.lean()
+			.exec();
+		if (!property) throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+
+		booking.status = BookingStatus.CONFIRMED;
+		return await this.bookingRepository.save(booking);
+	}
+
+	private async findBookings(
+		where: FindOptionsWhere<Booking>,
+		input: BookingsInquiry,
+	): Promise<BookingsDto> {
+		const [list, total] = await this.bookingRepository.findAndCount({
+			where,
+			order: { createdAt: 'DESC' },
+			skip: (input.page - 1) * input.limit,
+			take: input.limit,
+		});
+		return { list, total };
 	}
 }
