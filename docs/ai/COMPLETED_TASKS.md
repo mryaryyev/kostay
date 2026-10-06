@@ -1,6 +1,6 @@
 # Completed session tasks
 
-Historical record of the Nestar → Kostay rename completed October 4, 2026 (Asia/Seoul). This records the prior implementation; creation of the six handoff documents is a separate documentation-only change.
+Record of completed work, in order: the Nestar → Kostay rename (October 4, 2026, Asia/Seoul), backend Phase 1 and Phase 2 (October 5-7) and the frontend migration steps (October 7). The rename tables below are the historical rename diff; creation of the six handoff documents is a separate documentation-only change.
 
 ## Completed refactors
 
@@ -97,3 +97,44 @@ The package lint script includes `--fix`; the direct command above intentionally
 - `getMyBookings` (guest) and `getHostBookings` (agent; host's property ids come from MongoDB, bookings from PostgreSQL).
 - `cancelBooking` (guest, PENDING/CONFIRMED only) and `confirmBooking` (host, PENDING only).
 - A booking never changes `propertyStatus`; tested manually with Postman.
+
+## Phase 2, step 4: Payments (October 7, 2026)
+
+- `createPayment`: only the booking owner, only for a CONFIRMED booking; amount comes from `bookings.total_price` on the server. Payment is simulated (no gateway) and saved as SUCCEEDED.
+- Double payment is blocked (row lock inside a PostgreSQL transaction).
+- `cancelBooking` runs in a transaction: booking becomes CANCELLED and a SUCCEEDED payment becomes REFUNDED (full refund).
+- Booking lists now return `paymentStatus` (null when unpaid).
+- Tested manually with Postman.
+
+## Frontend migration: `kostay-next` (October 7, 2026)
+
+Repository `kostay-next` (Next.js Pages Router, Apollo, MUI/SCSS, Yarn only, manual GraphQL types, no codegen), branch `modification`. Steps 1-3 were committed together in one commit; the per-step counts below come from the migration agent's step reports. The agent made no edits before approval and stopped after each step. Backend contract: [FRONTEND_MIGRATION.md](FRONTEND_MIGRATION.md).
+
+### Step 1: Baseline
+
+- `yarn tsc --noEmit --incremental false` baseline captured before any edit.
+
+### Step 2: Property contract (23 files, +93/−423)
+
+- GraphQL documents, enums, types and consumers moved to `pricePerNight`, required `maxGuests` and `INACTIVE` (replacing `propertyPrice` and `SOLD`).
+- Removed `propertyRent`, `propertyBarter`, `soldAt`, `search.options` and `search.periodsRange` from client types, documents and screens. `propertyBeds` and `propertyRooms` are unchanged (still part of the backend contract).
+- Touched: `apollo/{admin,user}/{mutation,query}.ts`, `libs/enums/property.enum.ts`, `libs/types/property/*`, `libs/config.ts`, property filter/card/list components, `pages/property/{index,detail}.tsx`, My Page (`AddNewProperty`, `MyProperties`, `PropertyCard`) and the admin property list.
+- Validation: typecheck passed; grep for removed fields clean; site checked manually in the browser.
+
+### Step 3: Discovery and KRW formatting (18 files, +370/−548)
+
+- Guest count filter (`search.guestsCount`); price range is sent only when both bounds are valid; safe URL query normalization; filter routing consolidated so sort, pagination and navigation keep the filters.
+- Shared `formatKRW` helper in `libs/utils.ts` (`Intl.NumberFormat('ko-KR', { style: 'currency', currency: 'KRW', maximumFractionDigits: 0 })`, no conversion). Prices render as `₩… / night` on the homepage cards, property list and detail, My Properties and the admin list.
+- Desktop SCSS adjustments only; mobile placeholders unchanged.
+- Validation: typecheck passed; `git diff --check` passed; 32 in-memory normalization/formatting checks passed (no test files added); desktop SCSS compiled; grep for old fields, ungated `pricePerNight` output and `toISOString` clean; filters, sorting, pagination, bad URL input and price display checked manually in the browser.
+
+### Fix outside the steps
+
+- `MemberFollowings.tsx` and `MemberFollowers.tsx`: the refetch effect now skips until the member id exists. Before, `getMemberFollowings` received an empty id and the backend threw a BSON ObjectId error. This was an existing Nestar bug, not a migration regression.
+
+### Open frontend items
+
+- Step 4 (create/edit/lifecycle), Step 5 (branding and terminology, split 5A/5B/5C) and Step 6 (final verification) are not done.
+- A dev-only Apollo overlay ("Cannot convert object to primitive value", raised while Apollo formats a cache data-loss warning) was seen once; the cause is not identified.
+- Mobile screens remain untouched Nestar placeholders.
+- Booking screens are not built yet.

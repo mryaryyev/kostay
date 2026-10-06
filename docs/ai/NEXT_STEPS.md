@@ -1,10 +1,18 @@
-# Next steps: October 5, 2026
+# Next steps: October 7, 2026
 
 Timezone: Asia/Seoul. This is a prioritized handoff, not a scheduled automation or authorization to change domain behavior. Completed work is documented in [COMPLETED_TASKS.md](COMPLETED_TASKS.md).
 
 ## Phase 2
 
-- PostgreSQL foundation (TypeORM, `bookings`, `payments`, enums, migrations).
+Done: PostgreSQL foundation, booking/payment entities and migration, booking logic, payments (see [COMPLETED_TASKS.md](COMPLETED_TASKS.md)). Remaining:
+
+- `getBookedDates(propertyId)` for the property calendar.
+- Date availability filter in `getProperties` (booked property ids from PostgreSQL excluded in the Mongo query).
+- Batch jobs (`kostay-batch`): mark past CONFIRMED bookings COMPLETED; cancel stale PENDING bookings.
+- Decide what happens to future bookings when a host deactivates or deletes a property.
+- Concurrency protection for simultaneous overlapping bookings (for example a PostgreSQL exclusion constraint); the current overlap check runs in service code only.
+- Owner-side load of an INACTIVE property: `getProperty` returns only ACTIVE listings, so the host editor cannot open a paused listing. Decide whether `getProperty` (or a new host query) may return the owner's INACTIVE property.
+- BOOKING notifications, admin booking list, `POSTGRES_PROD` / Neon production branch.
 
 ## Backend cleanup
 
@@ -18,13 +26,16 @@ Timezone: Asia/Seoul. This is a prioritized handoff, not a scheduled automation 
 
 ## Frontend migration
 
-| Priority | Task                                                              | Completion criterion                                                    |
-| -------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| P1       | Locate and inspect the Next.js repository                         | Verified route/component/GraphQL inventory replaces conceptual mappings |
-| P1       | Capture baseline checks and key flows                             | Known failures separated from migration regressions                     |
-| P2       | Scope Nestar → Kostay branding changes                            | Exact file list and before → after mappings; unchanged routes/contracts |
-| P2       | Implement branding when authorized and validate navigation/layout | No unsupported booking labels or accidental sale-price relabeling       |
-| P3       | Propose booking screens after product decisions                   | Map each proposed screen to an agreed backend capability                |
+Done: repository inspected, baseline captured, property contract migrated, discovery filters and KRW formatter (frontend Steps 1-3, see [COMPLETED_TASKS.md](COMPLETED_TASKS.md)).
+
+| Priority | Task                                                                                                            | Completion criterion                                                                                                                          |
+| -------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1       | Step 4: host create/edit/lifecycle (deactivate/reactivate, edit ACTIVE only, validate price and guests)         | `pricePerNight` and `maxGuests` must be positive finite integers before submit; no `NaN`; manual create/edit/deactivate/reactivate flow works |
+| P2       | Step 5A-5C: Kostay branding and "Stays"/"Hosts" visible text (layout, discovery/profile copy, About/FAQ/Notice) | No route, file, variable or GraphQL renames; no unsupported booking labels                                                                    |
+| P2       | Step 6: final verification and documentation record                                                             | Typecheck passes; Network tab shows no GraphQL `errors` on the main flows                                                                     |
+| P2       | Booking screens (separate phase) against the implemented booking contract                                       | Each screen maps to an operation in [FRONTEND_MIGRATION.md](FRONTEND_MIGRATION.md); availability search waits for the backend items above     |
+| P3       | Investigate the dev-only Apollo overlay ("Cannot convert object to primitive value")                            | Find which query triggers the cache data-loss warning; add a `typePolicies` merge for the list wrapper type if needed                         |
+| P3       | Mobile screens                                                                                                  | Replace Nestar mobile placeholders after the desktop flows are final                                                                          |
 
 ## Testing
 
@@ -34,7 +45,7 @@ Timezone: Asia/Seoul. This is a prioritized handoff, not a scheduled automation 
 | P1       | Establish an isolated test database/configuration before runtime e2e runs | No production writes or unintended scheduled ranking jobs                                      |
 | P2       | Run existing API/batch e2e suites after typing/setup fixes                | Correct greetings, cleanup of application connections, reproducible results                    |
 | P2       | Validate GraphQL/client compatibility and both build outputs              | Representative existing operations still work; app paths match scripts                         |
-| P3       | Design booking tests once domain behavior is selected                     | Cover overlapping reservations, adjacent stays, ownership, cancellation, and price consistency |
+| P3       | Design booking tests when tests are requested                             | Cover overlapping reservations, adjacent stays, ownership, cancellation, and price consistency |
 
 ## Documentation
 
@@ -42,9 +53,11 @@ Timezone: Asia/Seoul. This is a prioritized handoff, not a scheduled automation 
 | -------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | P1       | Keep decision statuses explicit                                                   | Suggestions never appear as accepted product requirements                                         |
 | P2       | Replace starter README in a separately scoped update                              | Accurate architecture, commands, environment-key descriptions, and known failures without secrets |
-| P2       | Update frontend mappings and validation evidence after inspection                 | Actual relative links and dated outcomes                                                          |
+| P2       | Record each frontend step in COMPLETED_TASKS after verification (Steps 4-6)       | Actual file counts and dated outcomes, appended without changing existing content                 |
 | P2       | Record each implementation with clickable links and actual +added/-removed counts | Separate moved-only files from content changes                                                    |
 
-## Product decisions required before booking implementation
+## Product decisions
 
-Resolve bookable inventory (whole property, rooms, or both), instant confirmation versus host approval, payments in v1, cancellation rules, guest/host capabilities, pricing/timezone semantics, and data/client compatibility. Then design availability concurrency protection and reservation APIs. None of these choices was finalized by the safe rename; the provisional whole-property/no-payment suggestion is not a requirement.
+Decided and implemented in Phase 2: whole-property bookings; host approval (PENDING → CONFIRMED); payments simulated, with the amount always calculated on the server; guest cancellation with a full refund of a paid booking; the check-out day is free for another guest's check-in; dates are plain `YYYY-MM-DD` strings. Decided for the frontend: KRW per night with one formatter, desktop first, visible "Stays"/"Hosts" terminology only. See [DECISIONS.md](DECISIONS.md).
+
+Still open: rooms as separate inventory, cancellation windows and partial refunds, a real payment gateway, and the concurrency protection listed under Phase 2.
