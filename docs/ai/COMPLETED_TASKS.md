@@ -77,3 +77,9 @@ The package lint script includes `--fix`; the direct command above intentionally
 - Added non-unique indexes on `properties`; the old unique sale-price index is no longer declared. An existing database index is not dropped automatically.
 - No transactions, PostgreSQL, bookings or payments yet.
 - Validation: both `tsc` checks and `npm run build` pass.
+
+## Phase 2, step 1: PostgreSQL connection (October 6, 2026)
+
+- Added `typeorm`, `pg` and `@nestjs/typeorm`; PostgreSQL (Neon) connects through `POSTGRES_DEV` in `.env` (`sslmode=verify-full`).
+- Split `database/` into `mongo/` and `postgres/` modules; `DatabaseModule` only aggregates them.
+- No entities, enums or migrations yet.
