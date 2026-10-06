@@ -83,3 +83,10 @@ The package lint script includes `--fix`; the direct command above intentionally
 - Added `typeorm`, `pg` and `@nestjs/typeorm`; PostgreSQL (Neon) connects through `POSTGRES_DEV` in `.env` (`sslmode=verify-full`).
 - Split `database/` into `mongo/` and `postgres/` modules; `DatabaseModule` only aggregates them.
 - No entities, enums or migrations yet.
+
+## Phase 2, step 2: Booking and payment tables (October 6, 2026)
+
+- Added `Booking` and `Payment` TypeORM entities under `database/postgres/entities`.
+- `bookings.property_id` and `bookings.member_id` store Mongo ids as `varchar(24)` (no FK); `payments.booking_id` is a real FK.
+- Added `data-source.ts`, migration scripts, and the `CreateBookingsAndPayments` migration (applied to Neon).
+- `BookingModule` registers the entities; no service, resolver or mutations yet.
