@@ -90,3 +90,10 @@ The package lint script includes `--fix`; the direct command above intentionally
 - `bookings.property_id` and `bookings.member_id` store Mongo ids as `varchar(24)` (no FK); `payments.booking_id` is a real FK.
 - Added `data-source.ts`, migration scripts, and the `CreateBookingsAndPayments` migration (applied to Neon).
 - `BookingModule` registers the entities; no service, resolver or mutations yet.
+
+## Phase 2, step 3: Booking logic (October 6, 2026)
+
+- `createBooking`: validates dates, `maxGuests` and host ≠ guest, checks overlapping PENDING/CONFIRMED bookings in PostgreSQL, calculates `total_price` from `pricePerNight`.
+- `getMyBookings` (guest) and `getHostBookings` (agent; host's property ids come from MongoDB, bookings from PostgreSQL).
+- `cancelBooking` (guest, PENDING/CONFIRMED only) and `confirmBooking` (host, PENDING only).
+- A booking never changes `propertyStatus`; tested manually with Postman.

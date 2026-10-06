@@ -1,5 +1,6 @@
 import { Field, InputType, Int } from '@nestjs/graphql';
-import { IsInt, IsNotEmpty, Matches, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, Matches, Min } from 'class-validator';
+import { BookingStatus } from '../../enums/booking.enum';
 
 @InputType()
 export class BookingInput {
@@ -19,4 +20,21 @@ export class BookingInput {
 	@Min(1)
 	@Field(() => Int)
 	guestsCount: number;
+}
+
+@InputType()
+export class BookingsInquiry {
+	@IsInt()
+	@Min(1)
+	@Field(() => Int)
+	page: number;
+
+	@IsInt()
+	@Min(1)
+	@Field(() => Int)
+	limit: number;
+
+	@IsOptional()
+	@Field(() => BookingStatus, { nullable: true })
+	status?: BookingStatus;
 }

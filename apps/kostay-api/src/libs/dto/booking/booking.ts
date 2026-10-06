@@ -33,3 +33,12 @@ export class BookingDto {
 	@Field(() => Date)
 	updatedAt: Date;
 }
+
+@ObjectType('Bookings')
+export class BookingsDto {
+	@Field(() => [BookingDto])
+	list: BookingDto[];
+
+	@Field(() => Int)
+	total: number;
+}
