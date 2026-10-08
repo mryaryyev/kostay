@@ -2,18 +2,6 @@
 
 Kostay is a NestJS GraphQL monorepo migrated from a real estate platform into a booking platform.
 
-## Read First
-
-Before changing code, read the current AI handoff docs:
-
-- `docs/ai/BACKEND_MIGRATION.md`
-- `docs/ai/DECISIONS.md`
-- `docs/ai/FRONTEND_MIGRATION.md` (GraphQL contract used by the client)
-- `docs/ai/COMPLETED_TASKS.md`
-- `docs/ai/NEXT_STEPS.md`
-
-Use those files as the source of truth for migration history, accepted decisions, remaining work and validation status.
-
 ## Project Shape
 
 - Backend apps are `kostay-api` and `kostay-batch`.
@@ -42,10 +30,10 @@ Use those files as the source of truth for migration history, accepted decisions
 1. Analyze before editing.
 2. Keep changes small and consistent with existing project patterns.
 3. Do not remove working logic unless it is replaced safely.
-4. After a completed task, add at most 5-10 short bullet points to `docs/ai/COMPLETED_TASKS.md`. Do not create new documentation files.
-5. Do not add tests, fixtures, seed scripts or new files unless explicitly asked.
-6. Schema changes to PostgreSQL go through migrations (`synchronize` stays `false`). Generate a migration, show it, and do not run `migration:run` or touch any `.env` value without being asked.
-7. Never print or copy connection strings, passwords or tokens into code, docs or chat.
+4. Do not add tests, fixtures, seed scripts or new files unless explicitly asked.
+5. Schema changes to PostgreSQL go through migrations (`synchronize` stays `false`). Generate a migration, show it, and do not run `migration:run` or touch any `.env` value without being asked.
+6. Never print or copy connection strings, passwords or tokens into code, docs or chat.
+7. After reading all AGENTS.md, give summary about last situation of project with steps.
 
 ## Validation
 
