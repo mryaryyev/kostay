@@ -13,7 +13,7 @@ import {
 	BookingsDto,
 } from '../../libs/dto/booking/booking';
 import { Member } from '../../libs/dto/member/member';
-import { BookingInput, BookingsInquiry } from '../../libs/dto/booking/booking.input';
+import { BookAndPayInput, BookingsInquiry } from '../../libs/dto/booking/booking.input';
 import { Property } from '../../libs/dto/property/property';
 import { Message } from '../../libs/enums/common.enum';
 import { BookingStatus } from '../../libs/enums/booking.enum';
@@ -21,8 +21,6 @@ import { PropertyStatus } from '../../libs/enums/property.enum';
 import { shapeIntoMongoObjectId } from '../../libs/config';
 import { Payment } from '../../database/postgres/entities/payment.entity';
 import { PaymentStatus } from '../../libs/enums/payment.enum';
-import { PaymentInput } from '../../libs/dto/payment/payment.input';
-import { PaymentDto } from '../../libs/dto/payment/payment';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 
@@ -36,11 +34,15 @@ export class BookingService {
 		private readonly notificationService: NotificationService,
 	) {}
 
-	public async createBooking(
+	/**
+	 * Instant Book: validate, then save a CONFIRMED booking and its SUCCEEDED payment in one transaction.
+	 * Nothing is stored unless both succeed, so an unpaid booking never blocks dates.
+	 */
+	public async bookAndPay(
 		memberId: ObjectId,
-		input: BookingInput,
+		input: BookAndPayInput,
 	): Promise<BookingDto> {
-		const { propertyId, checkIn, checkOut, guestsCount } = input;
+		const { propertyId, checkIn, checkOut, guestsCount, paymentMethod } = input;
 
 		// 1. dates
 		const start = moment(checkIn, 'YYYY-MM-DD', true);
@@ -67,7 +69,7 @@ export class BookingService {
 		if (guestsCount > property.maxGuests)
 			throw new BadRequestException('Too many guests');
 
-		// 3. availability (PostgreSQL)
+		// 3. availability (PostgreSQL); the excl_booking_overlap constraint is the final guard
 		const hasConflict = await this.bookingRepository
 			.createQueryBuilder('b')
 			.where('b.propertyId = :propertyId', { propertyId: propertyIdStr })
@@ -78,20 +80,35 @@ export class BookingService {
 			.getExists();
 		if (hasConflict) throw new BadRequestException('Dates are not available');
 
-		// 4. save
-		const booking = this.bookingRepository.create({
-			propertyId: propertyIdStr,
-			memberId: guestId,
-			checkIn,
-			checkOut,
-			guestsCount,
-			totalPrice: nights * property.pricePerNight,
-		});
+		// 4. booking + payment together (amount always from the server, never from the client)
+		const totalPrice = nights * property.pricePerNight;
 		let saved: Booking;
 		try {
-			saved = await this.bookingRepository.save(booking);
+			saved = await this.dataSource.transaction(async (manager) => {
+				const booking = await manager.save(
+					manager.create(Booking, {
+						propertyId: propertyIdStr,
+						memberId: guestId,
+						checkIn,
+						checkOut,
+						guestsCount,
+						totalPrice,
+						status: BookingStatus.CONFIRMED,
+					}),
+				);
+				await manager.save(
+					manager.create(Payment, {
+						bookingId: booking.id,
+						amount: totalPrice,
+						paymentMethod,
+						status: PaymentStatus.SUCCEEDED, // simulated: no real payment gateway yet
+						paidAt: new Date(),
+					}),
+				);
+				return booking;
+			});
 		} catch (err) {
-			// excl_booking_overlap: another request booked the same dates a moment earlier.
+			// excl_booking_overlap: another guest booked the same dates a moment earlier.
 			if ((err as { code?: string })?.code === '23P01')
 				throw new BadRequestException('Dates are not available');
 			throw err;
@@ -101,10 +118,10 @@ export class BookingService {
 			saved,
 			guestId,
 			hostId,
-			'requested to book your stay',
+			'booked your stay',
 			property.propertyTitle,
 		);
-		return saved;
+		return { ...saved, paymentStatus: PaymentStatus.SUCCEEDED };
 	}
 
 	/** Public: active (PENDING / CONFIRMED) ranges of a stay that end today or later. No guest data is exposed. */
@@ -187,67 +204,12 @@ export class BookingService {
 			await this.notifyBooking(
 				cancelled,
 				guestId,
-				String(property.memberId),
+				(property.memberId as unknown as Types.ObjectId).toString(),
 				'cancelled their booking',
 				property.propertyTitle,
 			);
 		}
 		return cancelled;
-	}
-
-	public async confirmBooking(
-		memberId: ObjectId,
-		bookingId: string,
-	): Promise<BookingDto> {
-		const { booking, property } = await this.findPendingHostBooking(memberId, bookingId);
-		booking.status = BookingStatus.CONFIRMED;
-		const saved = await this.bookingRepository.save(booking);
-		await this.notifyBooking(
-			saved,
-			String(memberId),
-			saved.memberId,
-			'confirmed your booking',
-			property.propertyTitle,
-		);
-		return saved;
-	}
-
-	/** Host turns down a request. Only PENDING bookings, so no payment exists yet and nothing to refund. */
-	public async declineBooking(
-		memberId: ObjectId,
-		bookingId: string,
-	): Promise<BookingDto> {
-		const { booking, property } = await this.findPendingHostBooking(memberId, bookingId);
-		booking.status = BookingStatus.CANCELLED;
-		const saved = await this.bookingRepository.save(booking);
-		await this.notifyBooking(
-			saved,
-			String(memberId),
-			saved.memberId,
-			'declined your booking request',
-			property.propertyTitle,
-		);
-		return saved;
-	}
-
-	/** A PENDING booking on one of this host's stays; otherwise the request is not allowed. */
-	private async findPendingHostBooking(
-		memberId: ObjectId,
-		bookingId: string,
-	): Promise<{ booking: Booking; property: Property }> {
-		const booking = await this.bookingRepository.findOne({ where: { id: bookingId } });
-		if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
-		if (booking.status !== BookingStatus.PENDING)
-			throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
-
-		// only the host of this property can confirm or decline
-		const property = await this.propertyModel
-			.findOne({ _id: shapeIntoMongoObjectId(booking.propertyId), memberId })
-			.lean()
-			.exec();
-		if (!property) throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
-
-		return { booking, property };
 	}
 
 	/** BOOKING notification for the other side; desc shows stay + dates (plain YYYY-MM-DD). */
@@ -281,37 +243,6 @@ export class BookingService {
 		});
 		const withPayments = await this.attachPaymentStatus(list);
 		return { list: await this.attachDisplayData(withPayments), total };
-	}
-
-	public async createPayment(
-		memberId: ObjectId,
-		input: PaymentInput,
-	): Promise<PaymentDto> {
-		const guestId = (memberId as unknown as Types.ObjectId).toString();
-
-		return await this.dataSource.transaction(async (manager) => {
-			const booking = await manager.findOne(Booking, {
-				where: { id: input.bookingId, memberId: guestId },
-				lock: { mode: 'pessimistic_write' },
-			});
-			if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
-			if (booking.status !== BookingStatus.CONFIRMED)
-				throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
-
-			const alreadyPaid = await manager.exists(Payment, {
-				where: { bookingId: booking.id, status: PaymentStatus.SUCCEEDED },
-			});
-			if (alreadyPaid) throw new BadRequestException('Booking is already paid');
-
-			const payment = manager.create(Payment, {
-				bookingId: booking.id,
-				amount: booking.totalPrice, // always from the server, never from the client
-				paymentMethod: input.paymentMethod,
-				status: PaymentStatus.SUCCEEDED, // simulated: no real payment gateway yet
-				paidAt: new Date(),
-			});
-			return await manager.save(payment);
-		});
 	}
 
 	private async attachPaymentStatus(bookings: Booking[]): Promise<BookingDto[]> {
@@ -348,9 +279,9 @@ export class BookingService {
 
 		const propertyMap = new Map<string, BookingPropertyData>(
 			properties.map((p) => [
-				String(p._id),
+				(p._id as unknown as Types.ObjectId).toString(),
 				{
-					_id: String(p._id),
+					_id: (p._id as unknown as Types.ObjectId).toString(),
 					propertyTitle: p.propertyTitle,
 					propertyImage: p.propertyImages?.[0],
 					propertyLocation: p.propertyLocation,
@@ -360,9 +291,9 @@ export class BookingService {
 		);
 		const guestMap = new Map<string, BookingGuestData>(
 			guests.map((m) => [
-				String(m._id),
+				(m._id as unknown as Types.ObjectId).toString(),
 				{
-					_id: String(m._id),
+					_id: (m._id as unknown as Types.ObjectId).toString(),
 					memberNick: m.memberNick,
 					memberFullName: m.memberFullName,
 					memberImage: m.memberImage,
