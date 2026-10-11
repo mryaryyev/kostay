@@ -1,5 +1,5 @@
 import { Field, InputType, Int } from '@nestjs/graphql';
-import { IsInt, IsNotEmpty, IsOptional, Matches, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, Matches, MaxLength, Min } from 'class-validator';
 import { BookingStatus } from '../../enums/booking.enum';
 
 @InputType()
@@ -20,6 +20,15 @@ export class BookingInput {
 	@Min(1)
 	@Field(() => Int)
 	guestsCount: number;
+}
+
+/** Instant Book: dates + guests + how the guest pays, sent once from the checkout page. */
+@InputType()
+export class BookAndPayInput extends BookingInput {
+	@IsNotEmpty()
+	@MaxLength(50)
+	@Field(() => String)
+	paymentMethod: string; // e.g. CARD
 }
 
 @InputType()
