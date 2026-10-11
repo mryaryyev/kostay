@@ -17,11 +17,14 @@ import {
 	lookupFollowingData,
 } from '../../libs/config';
 
+import { NotificationService } from '../notification/notification.service';
+import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 @Injectable()
 export class FollowService {
 	constructor(
 		@InjectModel('Follow') private readonly followModel: Model<Follower | Following>,
 		private readonly memberService: MemberService,
+		private readonly notificationService: NotificationService,
 	) {}
 
 	public async subscribe(followerId: ObjectId, followingId: ObjectId): Promise<Follower> {
@@ -44,6 +47,13 @@ export class FollowService {
 			_id: followingId,
 			targetKey: 'memberFollowers',
 			modifier: 1,
+		});
+		await this.notificationService.createNotification({
+			notificationType: NotificationType.FOLLOW,
+			notificationGroup: NotificationGroup.MEMBER,
+			notificationTitle: 'started following you',
+			authorId: followerId,
+			receiverId: followingId,
 		});
 
 		return result;
