@@ -68,6 +68,17 @@ export class BookingResolver {
 		return await this.bookingService.confirmBooking(memberId, bookingId);
 	}
 
+	@Roles(MemberType.AGENT)
+	@UseGuards(RolesGuard)
+	@Mutation(() => BookingDto)
+	public async declineBooking(
+		@Args('bookingId', ParseUUIDPipe) bookingId: string,
+		@AuthMember('_id') memberId: ObjectId,
+	): Promise<BookingDto> {
+		console.log('Mutation: declineBooking');
+		return await this.bookingService.declineBooking(memberId, bookingId);
+	}
+
 	@UseGuards(AuthGuard)
 	@Mutation(() => PaymentDto)
 	public async createPayment(

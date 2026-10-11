@@ -5,7 +5,13 @@ import moment from 'moment';
 import { Model, ObjectId, Types } from 'mongoose';
 import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
 import { Booking } from '../../database/postgres/entities/booking.entity';
-import { BookingDto, BookingsDto } from '../../libs/dto/booking/booking';
+import {
+	BookingDto,
+	BookingGuestData,
+	BookingPropertyData,
+	BookingsDto,
+} from '../../libs/dto/booking/booking';
+import { Member } from '../../libs/dto/member/member';
 import { BookingInput, BookingsInquiry } from '../../libs/dto/booking/booking.input';
 import { Property } from '../../libs/dto/property/property';
 import { Message } from '../../libs/enums/common.enum';
@@ -22,6 +28,7 @@ export class BookingService {
 	constructor(
 		@InjectRepository(Booking) private readonly bookingRepository: Repository<Booking>,
 		@InjectModel('Property') private readonly propertyModel: Model<Property>,
+		@InjectModel('Member') private readonly memberModel: Model<Member>,
 		private readonly dataSource: DataSource,
 	) {}
 
@@ -76,7 +83,14 @@ export class BookingService {
 			guestsCount,
 			totalPrice: nights * property.pricePerNight,
 		});
-		return await this.bookingRepository.save(booking);
+		try {
+			return await this.bookingRepository.save(booking);
+		} catch (err) {
+			// excl_booking_overlap: another request booked the same dates a moment earlier.
+			if ((err as { code?: string })?.code === '23P01')
+				throw new BadRequestException('Dates are not available');
+			throw err;
+		}
 	}
 
 	public async getMyBookings(
@@ -138,20 +152,39 @@ export class BookingService {
 		memberId: ObjectId,
 		bookingId: string,
 	): Promise<BookingDto> {
+		const booking = await this.findPendingHostBooking(memberId, bookingId);
+		booking.status = BookingStatus.CONFIRMED;
+		return await this.bookingRepository.save(booking);
+	}
+
+	/** Host turns down a request. Only PENDING bookings, so no payment exists yet and nothing to refund. */
+	public async declineBooking(
+		memberId: ObjectId,
+		bookingId: string,
+	): Promise<BookingDto> {
+		const booking = await this.findPendingHostBooking(memberId, bookingId);
+		booking.status = BookingStatus.CANCELLED;
+		return await this.bookingRepository.save(booking);
+	}
+
+	/** A PENDING booking on one of this host's stays; otherwise the request is not allowed. */
+	private async findPendingHostBooking(
+		memberId: ObjectId,
+		bookingId: string,
+	): Promise<Booking> {
 		const booking = await this.bookingRepository.findOne({ where: { id: bookingId } });
 		if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
 		if (booking.status !== BookingStatus.PENDING)
 			throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
 
-		// only the host of this property can confirm
+		// only the host of this property can confirm or decline
 		const property = await this.propertyModel
 			.findOne({ _id: shapeIntoMongoObjectId(booking.propertyId), memberId })
 			.lean()
 			.exec();
 		if (!property) throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
 
-		booking.status = BookingStatus.CONFIRMED;
-		return await this.bookingRepository.save(booking);
+		return booking;
 	}
 
 	private async findBookings(
@@ -164,7 +197,8 @@ export class BookingService {
 			skip: (input.page - 1) * input.limit,
 			take: input.limit,
 		});
-		return { list: await this.attachPaymentStatus(list), total };
+		const withPayments = await this.attachPaymentStatus(list);
+		return { list: await this.attachDisplayData(withPayments), total };
 	}
 
 	public async createPayment(
@@ -209,5 +243,56 @@ export class BookingService {
 		payments.forEach((p) => latest.set(p.bookingId, p.status)); // newest overwrites older
 
 		return bookings.map((b) => ({ ...b, paymentStatus: latest.get(b.id) }));
+	}
+
+	/** Booking rows live in PostgreSQL; stay and guest details come from MongoDB in one query each. */
+	private async attachDisplayData(bookings: BookingDto[]): Promise<BookingDto[]> {
+		if (!bookings.length) return [];
+
+		const propertyIds = [...new Set(bookings.map((b) => b.propertyId))];
+		const guestIds = [...new Set(bookings.map((b) => b.memberId))];
+		const [properties, guests] = await Promise.all([
+			this.propertyModel
+				.find({ _id: { $in: propertyIds.map(shapeIntoMongoObjectId) } })
+				.select('propertyTitle propertyImages propertyLocation propertyAddress')
+				.lean()
+				.exec(),
+			this.memberModel
+				.find({ _id: { $in: guestIds.map(shapeIntoMongoObjectId) } })
+				.select('memberNick memberFullName memberImage memberPhone')
+				.lean()
+				.exec(),
+		]);
+
+		const propertyMap = new Map<string, BookingPropertyData>(
+			properties.map((p) => [
+				String(p._id),
+				{
+					_id: String(p._id),
+					propertyTitle: p.propertyTitle,
+					propertyImage: p.propertyImages?.[0],
+					propertyLocation: p.propertyLocation,
+					propertyAddress: p.propertyAddress,
+				},
+			]),
+		);
+		const guestMap = new Map<string, BookingGuestData>(
+			guests.map((m) => [
+				String(m._id),
+				{
+					_id: String(m._id),
+					memberNick: m.memberNick,
+					memberFullName: m.memberFullName,
+					memberImage: m.memberImage,
+					memberPhone: m.memberPhone,
+				},
+			]),
+		);
+
+		return bookings.map((b) => ({
+			...b,
+			propertyData: propertyMap.get(b.propertyId),
+			guestData: guestMap.get(b.memberId),
+		}));
 	}
 }
