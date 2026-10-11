@@ -6,6 +6,7 @@ import { Model, ObjectId, Types } from 'mongoose';
 import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
 import { Booking } from '../../database/postgres/entities/booking.entity';
 import {
+	BookedRange,
 	BookingDto,
 	BookingGuestData,
 	BookingPropertyData,
@@ -104,6 +105,22 @@ export class BookingService {
 			property.propertyTitle,
 		);
 		return saved;
+	}
+
+	/** Public: active (PENDING / CONFIRMED) ranges of a stay that end today or later. No guest data is exposed. */
+	public async getBookedDates(propertyId: string): Promise<BookedRange[]> {
+		const today = moment().format('YYYY-MM-DD');
+		const bookings = await this.bookingRepository
+			.createQueryBuilder('b')
+			.select(['b.checkIn', 'b.checkOut'])
+			.where('b.propertyId = :propertyId', { propertyId })
+			.andWhere('b.status IN (:...statuses)', {
+				statuses: [BookingStatus.PENDING, BookingStatus.CONFIRMED],
+			})
+			.andWhere('b.checkOut > :today', { today })
+			.orderBy('b.checkIn', 'ASC')
+			.getMany();
+		return bookings.map((b) => ({ checkIn: b.checkIn, checkOut: b.checkOut }));
 	}
 
 	public async getMyBookings(

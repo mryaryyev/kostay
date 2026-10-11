@@ -3,7 +3,7 @@ import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { ObjectId } from 'mongoose';
 import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { BookingDto, BookingsDto } from '../../libs/dto/booking/booking';
+import { BookedRange, BookingDto, BookingsDto } from '../../libs/dto/booking/booking';
 import { BookingInput, BookingsInquiry } from '../../libs/dto/booking/booking.input';
 import { BookingService } from './booking.service';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -24,6 +24,15 @@ export class BookingResolver {
 	): Promise<BookingDto> {
 		console.log('Mutation: createBooking');
 		return await this.bookingService.createBooking(memberId, input);
+	}
+
+	// Public on purpose: the stay page needs taken dates before login. Returns only date ranges.
+	@Query(() => [BookedRange])
+	public async getBookedDates(
+		@Args('propertyId') propertyId: string,
+	): Promise<BookedRange[]> {
+		console.log('Query: getBookedDates');
+		return await this.bookingService.getBookedDates(propertyId);
 	}
 
 	@UseGuards(AuthGuard)

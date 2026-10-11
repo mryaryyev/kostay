@@ -90,3 +90,13 @@ export class BookingsDto {
 	@Field(() => Int)
 	total: number;
 }
+
+/** A taken date range (check-out day itself is free), used to block dates on the stay page. */
+@ObjectType('BookedRange')
+export class BookedRange {
+	@Field(() => String)
+	checkIn: string;
+
+	@Field(() => String)
+	checkOut: string;
+}
