@@ -55,4 +55,9 @@ const NotificationSchema = new Schema(
 	{ timestamps: true, collection: 'notifications' },
 );
 
+// Inbox reads: my notifications, unread first filter, newest first.
+NotificationSchema.index({ receiverId: 1, notificationStatus: 1, createdAt: -1 });
+// Inbox filtered by type (e.g. the Messages tab).
+NotificationSchema.index({ receiverId: 1, notificationType: 1, createdAt: -1 });
+
 export default NotificationSchema;
