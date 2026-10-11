@@ -1,7 +1,12 @@
 import { Controller, Get, Logger } from '@nestjs/common';
 import { BatchService } from './batch.service';
 import { Cron, Interval, Timeout } from '@nestjs/schedule';
-import { BATCH_ROLLBACK, BATCH_TOP_AGENTS, BATCH_TOP_PROPERTIES } from './libs/config';
+import {
+	BATCH_COMPLETE_BOOKINGS,
+	BATCH_ROLLBACK,
+	BATCH_TOP_AGENTS,
+	BATCH_TOP_PROPERTIES,
+} from './libs/config';
 
 @Controller()
 export class BatchController {
@@ -42,6 +47,19 @@ export class BatchController {
 			this.logger['context'] = BATCH_TOP_AGENTS;
 			this.logger.debug('EXECUTED!');
 			await this.batchService.batchTopAgents();
+		} catch (err) {
+			this.logger.error(err);
+		}
+	}
+
+	// Runs 5 minutes after the 11:00 checkout time.
+	@Cron('00 05 11 * * *', { name: BATCH_COMPLETE_BOOKINGS })
+	public async batchCompleteBookings() {
+		try {
+			this.logger['context'] = BATCH_COMPLETE_BOOKINGS;
+			this.logger.debug('EXECUTED!');
+			const completed = await this.batchService.batchCompleteBookings();
+			this.logger.debug(`${completed} booking(s) completed`);
 		} catch (err) {
 			this.logger.error(err);
 		}

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { InjectConnection, MongooseModule } from '@nestjs/mongoose';
 import { Connection, ConnectionStates } from 'mongoose';
+import { PostgresModule } from '../../../kostay-api/src/database/postgres/postgres.module';
 
 @Module({
 	imports: [
@@ -12,6 +13,8 @@ import { Connection, ConnectionStates } from 'mongoose';
 						: process.env.MONGO_DEV,
 			}),
 		}),
+		// Bookings and payments live in PostgreSQL; same connection settings as the api.
+		PostgresModule,
 	],
 	exports: [MongooseModule],
 })

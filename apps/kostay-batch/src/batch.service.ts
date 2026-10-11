@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { InjectRepository } from '@nestjs/typeorm';
+import moment from 'moment';
 import { Model } from 'mongoose';
+import { LessThanOrEqual, Repository } from 'typeorm';
+import { Booking } from '../../kostay-api/src/database/postgres/entities/booking.entity';
+import { BookingStatus } from '../../kostay-api/src/libs/enums/booking.enum';
 import { Property } from '../../kostay-api/src/libs/dto/property/property';
 import { Member } from '../../kostay-api/src/libs/dto/member/member';
 import { PropertyStatus } from '../../kostay-api/src/libs/enums/property.enum';
@@ -11,6 +16,7 @@ export class BatchService {
 	constructor(
 		@InjectModel('Property') private readonly propertyModel: Model<Property>,
 		@InjectModel('Member') private readonly memberModel: Model<Member>,
+		@InjectRepository(Booking) private readonly bookingRepository: Repository<Booking>,
 	) {}
 
 	public async batchRollback(): Promise<void> {
@@ -66,6 +72,16 @@ export class BatchService {
 			return await this.memberModel.findByIdAndUpdate(_id, { memberRank: rank });
 		});
 		await Promise.all(promisedList);
+	}
+
+	/** Checkout is 11:00: CONFIRMED stays whose check-out day has come are COMPLETED (dates are plain YYYY-MM-DD). */
+	public async batchCompleteBookings(): Promise<number> {
+		const today = moment().format('YYYY-MM-DD');
+		const result = await this.bookingRepository.update(
+			{ status: BookingStatus.CONFIRMED, checkOut: LessThanOrEqual(today) },
+			{ status: BookingStatus.COMPLETED },
+		);
+		return result.affected ?? 0;
 	}
 
 	public getHello(): string {
