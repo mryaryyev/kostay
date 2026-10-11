@@ -75,11 +75,33 @@ export class BookingDto {
 	@Field(() => PaymentStatus, { nullable: true })
 	paymentStatus?: PaymentStatus;
 
+	@Field(() => String, { nullable: true })
+	paymentMethod?: string;
+
 	@Field(() => BookingPropertyData, { nullable: true })
 	propertyData?: BookingPropertyData;
 
 	@Field(() => BookingGuestData, { nullable: true })
 	guestData?: BookingGuestData;
+}
+
+@ObjectType('BookingStatusCount')
+export class BookingStatusCount {
+	@Field(() => BookingStatus)
+	status: BookingStatus;
+
+	@Field(() => Int)
+	count: number;
+}
+
+/** Admin summary over all bookings (amounts in KRW). */
+@ObjectType('BookingPaymentSummary')
+export class BookingPaymentSummary {
+	@Field(() => Float)
+	paidTotal: number;
+
+	@Field(() => Float)
+	refundedTotal: number;
 }
 
 @ObjectType('Bookings')
@@ -89,6 +111,13 @@ export class BookingsDto {
 
 	@Field(() => Int)
 	total: number;
+
+	// Admin only: counts per status (for the tabs) and payment totals
+	@Field(() => [BookingStatusCount], { nullable: true })
+	statusCounter?: BookingStatusCount[];
+
+	@Field(() => BookingPaymentSummary, { nullable: true })
+	paymentSummary?: BookingPaymentSummary;
 }
 
 /** A taken date range (check-out day itself is free), used to block dates on the stay page. */

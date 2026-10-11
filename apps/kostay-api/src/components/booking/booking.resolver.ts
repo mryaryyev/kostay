@@ -4,7 +4,11 @@ import { ObjectId } from 'mongoose';
 import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { BookedRange, BookingDto, BookingsDto } from '../../libs/dto/booking/booking';
-import { BookAndPayInput, BookingsInquiry } from '../../libs/dto/booking/booking.input';
+import {
+	AllBookingsInquiry,
+	BookAndPayInput,
+	BookingsInquiry,
+} from '../../libs/dto/booking/booking.input';
 import { BookingService } from './booking.service';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { MemberType } from '../../libs/enums/member.enum';
@@ -62,5 +66,28 @@ export class BookingResolver {
 	): Promise<BookingsDto> {
 		console.log('Query: getHostBookings');
 		return await this.bookingService.getHostBookings(memberId, input);
+	}
+
+	/** ADMIN **/
+
+	@Roles(MemberType.ADMIN)
+	@UseGuards(RolesGuard)
+	@Query(() => BookingsDto)
+	public async getAllBookingsByAdmin(
+		@Args('input') input: AllBookingsInquiry,
+	): Promise<BookingsDto> {
+		console.log('Query: getAllBookingsByAdmin');
+		return await this.bookingService.getAllBookingsByAdmin(input);
+	}
+
+	@Roles(MemberType.ADMIN)
+	@UseGuards(RolesGuard)
+	@Mutation(() => BookingDto)
+	public async cancelBookingByAdmin(
+		@Args('bookingId', ParseUUIDPipe) bookingId: string,
+		@AuthMember('_id') adminId: ObjectId,
+	): Promise<BookingDto> {
+		console.log('Mutation: cancelBookingByAdmin');
+		return await this.bookingService.cancelBookingByAdmin(adminId, bookingId);
 	}
 }
