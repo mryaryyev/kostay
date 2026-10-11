@@ -3,7 +3,12 @@ import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { ObjectId } from 'mongoose';
 import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { AuthGuard } from '../auth/guards/auth.guard';
-import { BookedRange, BookingDto, BookingsDto } from '../../libs/dto/booking/booking';
+import {
+	BookedRange,
+	BookingDto,
+	BookingsDto,
+	HostEarnings,
+} from '../../libs/dto/booking/booking';
 import {
 	AllBookingsInquiry,
 	BookAndPayInput,
@@ -66,6 +71,16 @@ export class BookingResolver {
 	): Promise<BookingsDto> {
 		console.log('Query: getHostBookings');
 		return await this.bookingService.getHostBookings(memberId, input);
+	}
+
+	@Roles(MemberType.AGENT)
+	@UseGuards(RolesGuard)
+	@Query(() => HostEarnings)
+	public async getHostEarnings(
+		@AuthMember('_id') memberId: ObjectId,
+	): Promise<HostEarnings> {
+		console.log('Query: getHostEarnings');
+		return await this.bookingService.getHostEarnings(memberId);
 	}
 
 	/** ADMIN **/

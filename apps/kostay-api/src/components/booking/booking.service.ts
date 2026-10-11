@@ -17,6 +17,7 @@ import {
 	BookedRange,
 	BookingDto,
 	BookingStatusCount,
+	HostEarnings,
 	BookingGuestData,
 	BookingPropertyData,
 	BookingsDto,
@@ -168,20 +169,72 @@ export class BookingService {
 		memberId: ObjectId,
 		input: BookingsInquiry,
 	): Promise<BookingsDto> {
-		const properties = await this.propertyModel
-			.find({ memberId })
-			.select('_id')
-			.lean()
-			.exec();
-		if (!properties.length) return { list: [], total: 0 };
+		const propertyIds = await this.getHostPropertyIds(memberId);
+		if (!propertyIds.length) return { list: [], total: 0 };
 
-		const propertyIds = properties.map((p) =>
-			(p._id as unknown as Types.ObjectId).toString(),
-		);
 		return await this.findBookings(
 			{ propertyId: In(propertyIds), ...(input.status ? { status: input.status } : {}) },
 			input,
 		);
+	}
+
+	/** Totals for the host's own stays: revenue from PostgreSQL payments, stay ids from MongoDB. */
+	public async getHostEarnings(memberId: ObjectId): Promise<HostEarnings> {
+		const empty: HostEarnings = {
+			monthRevenue: 0,
+			totalRevenue: 0,
+			activeBookings: 0,
+			upcomingCheckIns: 0,
+			nightsBooked: 0,
+		};
+		const propertyIds = await this.getHostPropertyIds(memberId);
+		if (!propertyIds.length) return empty;
+
+		const today = moment().format('YYYY-MM-DD');
+		const weekEnd = moment().add(6, 'days').format('YYYY-MM-DD');
+		const monthStart = moment().startOf('month').toDate();
+
+		const revenue = async (from?: Date) => {
+			const query = this.dataSource
+				.getRepository(Payment)
+				.createQueryBuilder('p')
+				.innerJoin('p.booking', 'b')
+				.select('COALESCE(SUM(p.amount), 0)', 'total')
+				.where('p.status = :status', { status: PaymentStatus.SUCCEEDED })
+				.andWhere('b.propertyId IN (:...propertyIds)', { propertyIds });
+			if (from) query.andWhere('p.paidAt >= :from', { from });
+			const row = await query.getRawOne<{ total: string }>();
+			return Number(row?.total ?? 0);
+		};
+
+		const [monthRevenue, totalRevenue, bookingRow] = await Promise.all([
+			revenue(monthStart),
+			revenue(),
+			this.bookingRepository
+				.createQueryBuilder('b')
+				.select(`COUNT(*) FILTER (WHERE b.status = :confirmed)::int`, 'activeBookings')
+				.addSelect(
+					`COUNT(*) FILTER (WHERE b.status = :confirmed AND b.checkIn BETWEEN :today AND :weekEnd)::int`,
+					'upcomingCheckIns',
+				)
+				// date - date is a whole number of days in PostgreSQL
+				.addSelect(
+					`COALESCE(SUM(b.checkOut - b.checkIn) FILTER (WHERE b.status IN (:confirmed, :completed)), 0)::int`,
+					'nightsBooked',
+				)
+				.where('b.propertyId IN (:...propertyIds)', { propertyIds })
+				.setParameters({
+					confirmed: BookingStatus.CONFIRMED,
+					completed: BookingStatus.COMPLETED,
+					today,
+					weekEnd,
+				})
+				.getRawOne<
+					Pick<HostEarnings, 'activeBookings' | 'upcomingCheckIns' | 'nightsBooked'>
+				>(),
+		]);
+
+		return { ...empty, ...bookingRow, monthRevenue, totalRevenue };
 	}
 
 	public async cancelBooking(memberId: ObjectId, bookingId: string): Promise<BookingDto> {
@@ -315,6 +368,15 @@ export class BookingService {
 			booking.status = BookingStatus.CANCELLED;
 			return await manager.save(booking);
 		});
+	}
+
+	private async getHostPropertyIds(memberId: ObjectId): Promise<string[]> {
+		const properties = await this.propertyModel
+			.find({ memberId })
+			.select('_id')
+			.lean()
+			.exec();
+		return properties.map((p) => (p._id as unknown as Types.ObjectId).toString());
 	}
 
 	/** BOOKING notification for the other side; desc shows stay + dates (plain YYYY-MM-DD). */
