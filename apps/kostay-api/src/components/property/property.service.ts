@@ -30,6 +30,8 @@ import { LikeService } from '../like/like.service';
 import { LikeInput } from '../../libs/dto/like/like.input';
 import { LikeGroup } from '../../libs/enums/like.enum';
 
+import { NotificationService } from '../notification/notification.service';
+import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 @Injectable()
 export class PropertyService {
 	constructor(
@@ -37,6 +39,7 @@ export class PropertyService {
 		private memberService: MemberService,
 		private viewService: ViewService,
 		private likeService: LikeService,
+		private notificationService: NotificationService,
 	) {}
 
 	public async createProperty(input: PropertyInput): Promise<Property> {
@@ -264,6 +267,18 @@ export class PropertyService {
 
 		// LIKE TOGGLE via Like modules
 		const modifier: number = await this.likeService.toggleLike(input);
+		// Notify the host only when the like is added, not when it is removed.
+		if (modifier === 1) {
+			await this.notificationService.createNotification({
+				notificationType: NotificationType.LIKE,
+				notificationGroup: NotificationGroup.PROPERTY,
+				notificationTitle: 'liked your stay',
+				notificationDesc: target.propertyTitle,
+				authorId: memberId,
+				receiverId: target.memberId,
+				propertyId: likeRefId,
+			});
+		}
 		const result = await this.propertyStatsEditor({
 			_id: likeRefId,
 			targetKey: 'propertyLikes',
