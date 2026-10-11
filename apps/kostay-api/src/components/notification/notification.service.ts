@@ -1,14 +1,31 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+	BadRequestException,
+	Injectable,
+	InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, ObjectId } from 'mongoose';
+import { Model, ObjectId, Types } from 'mongoose';
 import { Notification, Notifications } from '../../libs/dto/notification/notification';
-import { MessageInput, NotificationInput, NotificationInquiry } from '../../libs/dto/notification/notification.input';
+import {
+	MessageInput,
+	NotificationInput,
+	NotificationInquiry,
+} from '../../libs/dto/notification/notification.input';
 import { Property } from '../../libs/dto/property/property';
 import { Direction, Message } from '../../libs/enums/common.enum';
-import { NotificationGroup, NotificationStatus, NotificationType } from '../../libs/enums/notification.enum';
+import {
+	NotificationGroup,
+	NotificationStatus,
+	NotificationType,
+} from '../../libs/enums/notification.enum';
 import { PropertyStatus } from '../../libs/enums/property.enum';
 import { shapeIntoMongoObjectId } from '../../libs/config';
 import { T } from '../../libs/types/common';
+
+/** Compare two Mongo ids by value (ObjectId instances are never === each other). */
+const sameId = (a: ObjectId, b: ObjectId) =>
+	(a as unknown as Types.ObjectId).toString() ===
+	(b as unknown as Types.ObjectId).toString();
 
 const lookupAuthorData = {
 	$lookup: {
@@ -28,7 +45,7 @@ export class NotificationService {
 
 	/** Used by other services. Never notifies yourself, and never breaks the caller's action. */
 	public async createNotification(input: NotificationInput): Promise<void> {
-		if (String(input.authorId) === String(input.receiverId)) return;
+		if (sameId(input.authorId, input.receiverId)) return;
 		try {
 			await this.notificationModel.create(input);
 		} catch (err) {
@@ -36,7 +53,10 @@ export class NotificationService {
 		}
 	}
 
-	public async getNotifications(memberId: ObjectId, input: NotificationInquiry): Promise<Notifications> {
+	public async getNotifications(
+		memberId: ObjectId,
+		input: NotificationInquiry,
+	): Promise<Notifications> {
 		const { page, limit, search } = input;
 		const match: T = { receiverId: memberId };
 		if (search?.notificationStatus) match.notificationStatus = search.notificationStatus;
@@ -65,11 +85,17 @@ export class NotificationService {
 
 	public async getUnreadNotificationCount(memberId: ObjectId): Promise<number> {
 		return await this.notificationModel
-			.countDocuments({ receiverId: memberId, notificationStatus: NotificationStatus.WAIT })
+			.countDocuments({
+				receiverId: memberId,
+				notificationStatus: NotificationStatus.WAIT,
+			})
 			.exec();
 	}
 
-	public async markNotificationRead(memberId: ObjectId, notificationId: ObjectId): Promise<Notification> {
+	public async markNotificationRead(
+		memberId: ObjectId,
+		notificationId: ObjectId,
+	): Promise<Notification> {
 		const result = await this.notificationModel
 			.findOneAndUpdate(
 				{ _id: notificationId, receiverId: memberId },
@@ -92,16 +118,22 @@ export class NotificationService {
 	}
 
 	/** "Contact the host" on the stay detail page: stored as a MESSAGE notification for the host. */
-	public async sendMessageToHost(memberId: ObjectId, input: MessageInput): Promise<Notification> {
+	public async sendMessageToHost(
+		memberId: ObjectId,
+		input: MessageInput,
+	): Promise<Notification> {
 		const propertyId = shapeIntoMongoObjectId(input.propertyId);
 		const property = await this.propertyModel
 			.findOne({ _id: propertyId, propertyStatus: PropertyStatus.ACTIVE })
 			.lean()
 			.exec();
 		if (!property) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
-		if (String(property.memberId) === String(memberId)) throw new BadRequestException(Message.BAD_REQUEST);
+		if (sameId(property.memberId, memberId))
+			throw new BadRequestException(Message.BAD_REQUEST);
 
-		const contact = [input.senderName.trim(), input.senderPhone?.trim()].filter(Boolean).join(' · ');
+		const contact = [input.senderName.trim(), input.senderPhone?.trim()]
+			.filter(Boolean)
+			.join(' · ');
 		try {
 			return await this.notificationModel.create({
 				notificationType: NotificationType.MESSAGE,
