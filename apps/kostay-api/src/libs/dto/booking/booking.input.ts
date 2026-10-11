@@ -47,3 +47,17 @@ export class BookingsInquiry {
 	@Field(() => BookingStatus, { nullable: true })
 	status?: BookingStatus;
 }
+
+/** Admin booking list: optional status and check-in range (YYYY-MM-DD). */
+@InputType()
+export class AllBookingsInquiry extends BookingsInquiry {
+	@IsOptional()
+	@Matches(/^\d{4}-\d{2}-\d{2}$/)
+	@Field(() => String, { nullable: true })
+	checkInFrom?: string;
+
+	@IsOptional()
+	@Matches(/^\d{4}-\d{2}-\d{2}$/)
+	@Field(() => String, { nullable: true })
+	checkInTo?: string;
+}

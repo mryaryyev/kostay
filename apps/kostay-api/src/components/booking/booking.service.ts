@@ -3,17 +3,30 @@ import { InjectModel } from '@nestjs/mongoose';
 import { InjectRepository } from '@nestjs/typeorm';
 import moment from 'moment';
 import { Model, ObjectId, Types } from 'mongoose';
-import { DataSource, FindOptionsWhere, In, Repository } from 'typeorm';
+import {
+	Between,
+	DataSource,
+	FindOptionsWhere,
+	In,
+	LessThanOrEqual,
+	MoreThanOrEqual,
+	Repository,
+} from 'typeorm';
 import { Booking } from '../../database/postgres/entities/booking.entity';
 import {
 	BookedRange,
 	BookingDto,
+	BookingStatusCount,
 	BookingGuestData,
 	BookingPropertyData,
 	BookingsDto,
 } from '../../libs/dto/booking/booking';
 import { Member } from '../../libs/dto/member/member';
-import { BookAndPayInput, BookingsInquiry } from '../../libs/dto/booking/booking.input';
+import {
+	AllBookingsInquiry,
+	BookAndPayInput,
+	BookingsInquiry,
+} from '../../libs/dto/booking/booking.input';
 import { Property } from '../../libs/dto/property/property';
 import { Message } from '../../libs/enums/common.enum';
 import { BookingStatus } from '../../libs/enums/booking.enum';
@@ -173,26 +186,7 @@ export class BookingService {
 
 	public async cancelBooking(memberId: ObjectId, bookingId: string): Promise<BookingDto> {
 		const guestId = (memberId as unknown as Types.ObjectId).toString();
-
-		const cancelled = await this.dataSource.transaction(async (manager) => {
-			const booking = await manager.findOne(Booking, {
-				where: { id: bookingId, memberId: guestId },
-				lock: { mode: 'pessimistic_write' },
-			});
-			if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
-			if (![BookingStatus.PENDING, BookingStatus.CONFIRMED].includes(booking.status))
-				throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
-
-			// full refund if the booking was already paid
-			await manager.update(
-				Payment,
-				{ bookingId: booking.id, status: PaymentStatus.SUCCEEDED },
-				{ status: PaymentStatus.REFUNDED },
-			);
-
-			booking.status = BookingStatus.CANCELLED;
-			return await manager.save(booking);
-		});
+		const cancelled = await this.cancelAndRefund({ id: bookingId, memberId: guestId });
 
 		// Tell the host after the transaction is committed.
 		const property = await this.propertyModel
@@ -210,6 +204,117 @@ export class BookingService {
 			);
 		}
 		return cancelled;
+	}
+
+	/** ADMIN **/
+
+	/** Every booking (newest first) with status counts for the tabs and the paid / refunded totals. */
+	public async getAllBookingsByAdmin(input: AllBookingsInquiry): Promise<BookingsDto> {
+		const { checkInFrom, checkInTo } = input;
+		const range: FindOptionsWhere<Booking> = {};
+		if (checkInFrom && checkInTo) range.checkIn = Between(checkInFrom, checkInTo);
+		else if (checkInFrom) range.checkIn = MoreThanOrEqual(checkInFrom);
+		else if (checkInTo) range.checkIn = LessThanOrEqual(checkInTo);
+
+		const [result, statusRows, paymentRows] = await Promise.all([
+			this.findBookings(
+				{ ...range, ...(input.status ? { status: input.status } : {}) },
+				input,
+			),
+			// Tab counts ignore the selected status, so every tab shows its own number.
+			this.countByStatus(checkInFrom, checkInTo),
+			this.dataSource
+				.getRepository(Payment)
+				.createQueryBuilder('p')
+				.select('p.status', 'status')
+				.addSelect('COALESCE(SUM(p.amount), 0)', 'amount')
+				.where('p.status IN (:...statuses)', {
+					statuses: [PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDED],
+				})
+				.groupBy('p.status')
+				.getRawMany<{ status: PaymentStatus; amount: string }>(),
+		]);
+
+		const amountOf = (status: PaymentStatus) =>
+			Number(paymentRows.find((row) => row.status === status)?.amount ?? 0);
+		return {
+			...result,
+			statusCounter: statusRows,
+			paymentSummary: {
+				paidTotal: amountOf(PaymentStatus.SUCCEEDED),
+				refundedTotal: amountOf(PaymentStatus.REFUNDED),
+			},
+		};
+	}
+
+	private async countByStatus(
+		checkInFrom?: string,
+		checkInTo?: string,
+	): Promise<BookingStatusCount[]> {
+		const query = this.bookingRepository
+			.createQueryBuilder('b')
+			.select('b.status', 'status')
+			.addSelect('COUNT(*)::int', 'count')
+			.groupBy('b.status');
+		if (checkInFrom) query.andWhere('b.checkIn >= :checkInFrom', { checkInFrom });
+		if (checkInTo) query.andWhere('b.checkIn <= :checkInTo', { checkInTo });
+		return await query.getRawMany<BookingStatusCount>();
+	}
+
+	/** Admin cancel (e.g. a problem with the stay): full refund, guest and host are both told. */
+	public async cancelBookingByAdmin(
+		adminId: ObjectId,
+		bookingId: string,
+	): Promise<BookingDto> {
+		const cancelled = await this.cancelAndRefund({ id: bookingId });
+		const authorId = (adminId as unknown as Types.ObjectId).toString();
+
+		const property = await this.propertyModel
+			.findById(shapeIntoMongoObjectId(cancelled.propertyId))
+			.select('memberId propertyTitle')
+			.lean()
+			.exec();
+		const propertyTitle = property?.propertyTitle ?? 'Your stay';
+		await this.notifyBooking(
+			cancelled,
+			authorId,
+			cancelled.memberId,
+			'cancelled your booking',
+			propertyTitle,
+		);
+		if (property) {
+			await this.notifyBooking(
+				cancelled,
+				authorId,
+				(property.memberId as unknown as Types.ObjectId).toString(),
+				'cancelled a booking of your stay',
+				propertyTitle,
+			);
+		}
+		return cancelled;
+	}
+
+	/** Shared by guest and admin cancel: only PENDING / CONFIRMED, payment refunded in the same transaction. */
+	private async cancelAndRefund(where: FindOptionsWhere<Booking>): Promise<Booking> {
+		return await this.dataSource.transaction(async (manager) => {
+			const booking = await manager.findOne(Booking, {
+				where,
+				lock: { mode: 'pessimistic_write' },
+			});
+			if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
+			if (![BookingStatus.PENDING, BookingStatus.CONFIRMED].includes(booking.status))
+				throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+
+			// full refund if the booking was already paid
+			await manager.update(
+				Payment,
+				{ bookingId: booking.id, status: PaymentStatus.SUCCEEDED },
+				{ status: PaymentStatus.REFUNDED },
+			);
+
+			booking.status = BookingStatus.CANCELLED;
+			return await manager.save(booking);
+		});
 	}
 
 	/** BOOKING notification for the other side; desc shows stay + dates (plain YYYY-MM-DD). */
@@ -252,10 +357,14 @@ export class BookingService {
 			where: { bookingId: In(bookings.map((b) => b.id)) },
 			order: { createdAt: 'ASC' },
 		});
-		const latest = new Map<string, PaymentStatus>();
-		payments.forEach((p) => latest.set(p.bookingId, p.status)); // newest overwrites older
+		const latest = new Map<string, Payment>();
+		payments.forEach((p) => latest.set(p.bookingId, p)); // newest overwrites older
 
-		return bookings.map((b) => ({ ...b, paymentStatus: latest.get(b.id) }));
+		return bookings.map((b) => ({
+			...b,
+			paymentStatus: latest.get(b.id)?.status,
+			paymentMethod: latest.get(b.id)?.paymentMethod,
+		}));
 	}
 
 	/** Booking rows live in PostgreSQL; stay and guest details come from MongoDB in one query each. */
