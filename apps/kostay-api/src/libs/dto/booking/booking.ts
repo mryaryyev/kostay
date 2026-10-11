@@ -129,3 +129,25 @@ export class BookedRange {
 	@Field(() => String)
 	checkOut: string;
 }
+
+/** Host summary on My Page → Reservations (own stays only, amounts in KRW). */
+@ObjectType('HostEarnings')
+export class HostEarnings {
+	// SUCCEEDED payments paid this month; refunded payments are excluded
+	@Field(() => Float)
+	monthRevenue: number;
+
+	@Field(() => Float)
+	totalRevenue: number;
+
+	@Field(() => Int)
+	activeBookings: number;
+
+	// CONFIRMED bookings that check in during the next 7 days (today included)
+	@Field(() => Int)
+	upcomingCheckIns: number;
+
+	// Nights of CONFIRMED and COMPLETED bookings
+	@Field(() => Int)
+	nightsBooked: number;
+}
