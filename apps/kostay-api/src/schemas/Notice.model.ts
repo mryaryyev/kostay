@@ -1,5 +1,5 @@
-import mongoose, { Schema } from 'mongoose';
-import { NoticeCategory, NoticeStatus } from '../libs/enums/notice.enum';
+import { Schema } from 'mongoose';
+import { FaqGroup, NoticeCategory, NoticeStatus } from '../libs/enums/notice.enum';
 
 const NoticeSchema = new Schema(
 	{
@@ -15,6 +15,18 @@ const NoticeSchema = new Schema(
 			default: NoticeStatus.ACTIVE,
 		},
 
+		// FAQ only: which tab the question belongs to
+		faqGroup: {
+			type: String,
+			enum: FaqGroup,
+		},
+
+		// NOTICE only: shown first with an "event" badge
+		noticeEvent: {
+			type: Boolean,
+			default: false,
+		},
+
 		noticeTitle: {
 			type: String,
 			required: true,
@@ -25,6 +37,11 @@ const NoticeSchema = new Schema(
 			required: true,
 		},
 
+		noticeViews: {
+			type: Number,
+			default: 0,
+		},
+
 		memberId: {
 			type: Schema.Types.ObjectId,
 			required: true,
@@ -33,5 +50,7 @@ const NoticeSchema = new Schema(
 	},
 	{ timestamps: true, collection: 'notices' },
 );
+
+NoticeSchema.index({ noticeCategory: 1, noticeStatus: 1, createdAt: -1 });
 
 export default NoticeSchema;
