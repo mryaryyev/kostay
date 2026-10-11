@@ -1,5 +1,13 @@
 import { Field, InputType, Int } from '@nestjs/graphql';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, Length, Min } from 'class-validator';
+import {
+	IsIn,
+	IsInt,
+	IsNotEmpty,
+	IsOptional,
+	Length,
+	Matches,
+	Min,
+} from 'class-validator';
 import {
 	PropertyLocation,
 	PropertyStatus,
@@ -124,6 +132,17 @@ class PISearch {
 	@IsOptional()
 	@Field(() => String, { nullable: true })
 	text?: string;
+
+	// Availability: plain YYYY-MM-DD dates, used only when both are set
+	@IsOptional()
+	@Matches(/^\d{4}-\d{2}-\d{2}$/)
+	@Field(() => String, { nullable: true })
+	checkIn?: string;
+
+	@IsOptional()
+	@Matches(/^\d{4}-\d{2}-\d{2}$/)
+	@Field(() => String, { nullable: true })
+	checkOut?: string;
 }
 
 @InputType()
