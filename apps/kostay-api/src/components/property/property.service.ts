@@ -4,6 +4,10 @@ import {
 	InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Booking } from '../../database/postgres/entities/booking.entity';
+import { BookingStatus } from '../../libs/enums/booking.enum';
 import { Model, ObjectId } from 'mongoose';
 import { Properties, Property } from '../../libs/dto/property/property';
 import { Direction, Message } from '../../libs/enums/common.enum';
@@ -40,6 +44,7 @@ export class PropertyService {
 		private viewService: ViewService,
 		private likeService: LikeService,
 		private notificationService: NotificationService,
+		@InjectRepository(Booking) private readonly bookingRepository: Repository<Booking>,
 	) {}
 
 	public async createProperty(input: PropertyInput): Promise<Property> {
@@ -146,6 +151,12 @@ export class PropertyService {
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
 		this.shapeMatchQuery(match, input);
+		const { checkIn, checkOut } = input.search;
+		if (checkIn && checkOut && checkOut > checkIn) {
+			const unavailableIds = await this.getUnavailablePropertyIds(checkIn, checkOut);
+			if (unavailableIds.length)
+				match._id = { $nin: unavailableIds.map(shapeIntoMongoObjectId) };
+		}
 		console.log('match:', match);
 
 		const result: Properties[] = await this.propertyModel
@@ -170,6 +181,22 @@ export class PropertyService {
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		return result[0];
+	}
+
+	/** PostgreSQL: stays with an active booking overlapping the dates (same rule as bookAndPay, check-out day stays free). */
+	private async getUnavailablePropertyIds(
+		checkIn: string,
+		checkOut: string,
+	): Promise<string[]> {
+		const rows: { propertyId: string }[] = await this.bookingRepository
+			.createQueryBuilder('b')
+			.select('DISTINCT b.propertyId', 'propertyId')
+			.where('b.status IN (:...statuses)', {
+				statuses: [BookingStatus.PENDING, BookingStatus.CONFIRMED],
+			})
+			.andWhere('b.checkIn < :checkOut AND b.checkOut > :checkIn', { checkIn, checkOut })
+			.getRawMany();
+		return rows.map((row) => row.propertyId);
 	}
 
 	private shapeMatchQuery(match: T, input: PropertiesInquiry): void {
