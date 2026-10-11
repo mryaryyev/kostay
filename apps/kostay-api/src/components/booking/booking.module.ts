@@ -8,6 +8,7 @@ import { BookingResolver } from './booking.resolver';
 import PropertySchema from '../../schemas/Property.model';
 import MemberSchema from '../../schemas/Member.model';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
 	imports: [
@@ -17,6 +18,7 @@ import { AuthModule } from '../auth/auth.module';
 			{ name: 'Member', schema: MemberSchema },
 		]),
 		AuthModule,
+		NotificationModule,
 	],
 	exports: [TypeOrmModule],
 	providers: [BookingService, BookingResolver],

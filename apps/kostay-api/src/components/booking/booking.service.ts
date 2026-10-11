@@ -22,6 +22,8 @@ import { Payment } from '../../database/postgres/entities/payment.entity';
 import { PaymentStatus } from '../../libs/enums/payment.enum';
 import { PaymentInput } from '../../libs/dto/payment/payment.input';
 import { PaymentDto } from '../../libs/dto/payment/payment';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 
 @Injectable()
 export class BookingService {
@@ -30,6 +32,7 @@ export class BookingService {
 		@InjectModel('Property') private readonly propertyModel: Model<Property>,
 		@InjectModel('Member') private readonly memberModel: Model<Member>,
 		private readonly dataSource: DataSource,
+		private readonly notificationService: NotificationService,
 	) {}
 
 	public async createBooking(
@@ -83,14 +86,24 @@ export class BookingService {
 			guestsCount,
 			totalPrice: nights * property.pricePerNight,
 		});
+		let saved: Booking;
 		try {
-			return await this.bookingRepository.save(booking);
+			saved = await this.bookingRepository.save(booking);
 		} catch (err) {
 			// excl_booking_overlap: another request booked the same dates a moment earlier.
 			if ((err as { code?: string })?.code === '23P01')
 				throw new BadRequestException('Dates are not available');
 			throw err;
 		}
+
+		await this.notifyBooking(
+			saved,
+			guestId,
+			hostId,
+			'requested to book your stay',
+			property.propertyTitle,
+		);
+		return saved;
 	}
 
 	public async getMyBookings(
@@ -127,7 +140,7 @@ export class BookingService {
 	public async cancelBooking(memberId: ObjectId, bookingId: string): Promise<BookingDto> {
 		const guestId = (memberId as unknown as Types.ObjectId).toString();
 
-		return await this.dataSource.transaction(async (manager) => {
+		const cancelled = await this.dataSource.transaction(async (manager) => {
 			const booking = await manager.findOne(Booking, {
 				where: { id: bookingId, memberId: guestId },
 				lock: { mode: 'pessimistic_write' },
@@ -146,15 +159,40 @@ export class BookingService {
 			booking.status = BookingStatus.CANCELLED;
 			return await manager.save(booking);
 		});
+
+		// Tell the host after the transaction is committed.
+		const property = await this.propertyModel
+			.findById(shapeIntoMongoObjectId(cancelled.propertyId))
+			.select('memberId propertyTitle')
+			.lean()
+			.exec();
+		if (property) {
+			await this.notifyBooking(
+				cancelled,
+				guestId,
+				String(property.memberId),
+				'cancelled their booking',
+				property.propertyTitle,
+			);
+		}
+		return cancelled;
 	}
 
 	public async confirmBooking(
 		memberId: ObjectId,
 		bookingId: string,
 	): Promise<BookingDto> {
-		const booking = await this.findPendingHostBooking(memberId, bookingId);
+		const { booking, property } = await this.findPendingHostBooking(memberId, bookingId);
 		booking.status = BookingStatus.CONFIRMED;
-		return await this.bookingRepository.save(booking);
+		const saved = await this.bookingRepository.save(booking);
+		await this.notifyBooking(
+			saved,
+			String(memberId),
+			saved.memberId,
+			'confirmed your booking',
+			property.propertyTitle,
+		);
+		return saved;
 	}
 
 	/** Host turns down a request. Only PENDING bookings, so no payment exists yet and nothing to refund. */
@@ -162,16 +200,24 @@ export class BookingService {
 		memberId: ObjectId,
 		bookingId: string,
 	): Promise<BookingDto> {
-		const booking = await this.findPendingHostBooking(memberId, bookingId);
+		const { booking, property } = await this.findPendingHostBooking(memberId, bookingId);
 		booking.status = BookingStatus.CANCELLED;
-		return await this.bookingRepository.save(booking);
+		const saved = await this.bookingRepository.save(booking);
+		await this.notifyBooking(
+			saved,
+			String(memberId),
+			saved.memberId,
+			'declined your booking request',
+			property.propertyTitle,
+		);
+		return saved;
 	}
 
 	/** A PENDING booking on one of this host's stays; otherwise the request is not allowed. */
 	private async findPendingHostBooking(
 		memberId: ObjectId,
 		bookingId: string,
-	): Promise<Booking> {
+	): Promise<{ booking: Booking; property: Property }> {
 		const booking = await this.bookingRepository.findOne({ where: { id: bookingId } });
 		if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
 		if (booking.status !== BookingStatus.PENDING)
@@ -184,7 +230,26 @@ export class BookingService {
 			.exec();
 		if (!property) throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
 
-		return booking;
+		return { booking, property };
+	}
+
+	/** BOOKING notification for the other side; desc shows stay + dates (plain YYYY-MM-DD). */
+	private async notifyBooking(
+		booking: Booking,
+		authorId: string,
+		receiverId: string,
+		title: string,
+		propertyTitle: string,
+	): Promise<void> {
+		await this.notificationService.createNotification({
+			notificationType: NotificationType.BOOKING,
+			notificationGroup: NotificationGroup.BOOKING,
+			notificationTitle: title,
+			notificationDesc: `${propertyTitle} · ${booking.checkIn} → ${booking.checkOut}`,
+			authorId: shapeIntoMongoObjectId(authorId),
+			receiverId: shapeIntoMongoObjectId(receiverId),
+			propertyId: shapeIntoMongoObjectId(booking.propertyId),
+		});
 	}
 
 	private async findBookings(
