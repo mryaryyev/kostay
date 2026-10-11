@@ -141,7 +141,8 @@ export class BoardArticleService {
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
 		if (articleCategory) match.articleCategory = articleCategory;
-		if (text) match.articleTitle = { $regex: new RegExp(text, 'i') };
+		// Escape user input so characters like "(" or ".*" are matched literally.
+		if (text) match.articleTitle = { $regex: new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') };
 		if (input.search?.memberId) {
 			match.memberId = shapeIntoMongoObjectId(input.search.memberId);
 		}
