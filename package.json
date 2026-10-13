@@ -46,6 +46,7 @@
 		"class-validator": "^0.14.0",
 		"graphql": "^16.8.1",
 		"graphql-upload-minimal": "^1.6.4",
+		"ioredis": "^5.11.1",
 		"moment": "^2.29.4",
 		"mongoose": "^8.0.0",
 		"pg": "^8.23.1",
