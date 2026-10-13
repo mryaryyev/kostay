@@ -115,6 +115,9 @@ export class FollowService {
 		const result: Followings[] = await this.followModel
 			.aggregate([
 				{ $match: match },
+				// Join the member first: a follow whose member was deleted drops out of both the count and the list.
+				lookupFollowingData,
+				{ $unwind: '$followingData' },
 				{ $sort: { createdAt: Direction.DESC } },
 				{
 					$facet: {
@@ -128,8 +131,6 @@ export class FollowService {
 								followerId: memberId,
 								followingId: '$followingId',
 							}),
-							lookupFollowingData,
-							{ $unwind: '$followingData' },
 						],
 						metaCounter: [{ $count: 'total' }],
 					},
@@ -154,6 +155,9 @@ export class FollowService {
 		const result: Followers[] = await this.followModel
 			.aggregate([
 				{ $match: match },
+				// Join the member first: a follow whose member was deleted drops out of both the count and the list.
+				lookupFollowerData,
+				{ $unwind: '$followerData' },
 				{ $sort: { createdAt: Direction.DESC } },
 				{
 					$facet: {
@@ -167,8 +171,6 @@ export class FollowService {
 								followerId: memberId,
 								followingId: '$followerId',
 							}),
-							lookupFollowerData,
-							{ $unwind: '$followerData' },
 						],
 						metaCounter: [{ $count: 'total' }],
 					},
