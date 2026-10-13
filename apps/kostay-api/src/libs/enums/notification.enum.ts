@@ -7,6 +7,7 @@ export enum NotificationType {
 	MESSAGE = 'MESSAGE',
 	BOOKING = 'BOOKING',
 	INQUIRY = 'INQUIRY',
+	LISTING = 'LISTING', // stay submitted / approved / rejected
 }
 registerEnumType(NotificationType, {
 	name: 'NotificationType',

@@ -57,6 +57,7 @@ export class DashboardService {
 			hosts,
 			activeStays,
 			pausedStays,
+			pendingStays,
 			activeArticles,
 			waitingInquiries,
 			confirmedBookings,
@@ -72,6 +73,7 @@ export class DashboardService {
 			this.propertyModel
 				.countDocuments({ propertyStatus: PropertyStatus.INACTIVE })
 				.exec(),
+			this.propertyModel.countDocuments({ propertyStatus: PropertyStatus.PENDING }).exec(),
 			this.boardArticleModel
 				.countDocuments({ articleStatus: BoardArticleStatus.ACTIVE })
 				.exec(),
@@ -93,6 +95,7 @@ export class DashboardService {
 			hosts,
 			activeStays,
 			pausedStays,
+			pendingStays,
 			activeArticles,
 			waitingInquiries,
 			confirmedBookings,

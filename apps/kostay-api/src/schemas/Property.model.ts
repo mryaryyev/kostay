@@ -16,7 +16,7 @@ const PropertySchema = new Schema(
 		propertyStatus: {
 			type: String,
 			enum: PropertyStatus,
-			default: PropertyStatus.ACTIVE,
+			default: PropertyStatus.PENDING,
 		},
 
 		propertyLocation: {

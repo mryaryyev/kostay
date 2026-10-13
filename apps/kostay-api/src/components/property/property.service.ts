@@ -36,10 +36,13 @@ import { LikeGroup } from '../../libs/enums/like.enum';
 
 import { NotificationService } from '../notification/notification.service';
 import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
+import { Member } from '../../libs/dto/member/member';
+import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
 @Injectable()
 export class PropertyService {
 	constructor(
 		@InjectModel('Property') private readonly propertyModel: Model<Property>,
+		@InjectModel('Member') private readonly memberModel: Model<Member>,
 		private memberService: MemberService,
 		private viewService: ViewService,
 		private likeService: LikeService,
@@ -49,14 +52,10 @@ export class PropertyService {
 
 	public async createProperty(input: PropertyInput): Promise<Property> {
 		try {
-			const result = await this.propertyModel.create(input);
-			// ==> increase memberProperties
-			await this.memberService.memberStatsEditor({
-				_id: result.memberId,
-				targetKey: 'memberProperties',
-				modifier: 1,
-			});
-			// <==
+			// New stays wait for admin approval before they appear in search.
+			// memberProperties only counts public (ACTIVE) stays, so it changes on approval, not here.
+			const result = await this.propertyModel.create({ ...input, propertyStatus: PropertyStatus.PENDING });
+			await this.notifyAdmins(result);
 			return result;
 		} catch (err) {
 			console.log('Error, Service.model:', err instanceof Error ? err.message : err);
@@ -64,19 +63,44 @@ export class PropertyService {
 		}
 	}
 
-	public async getProperty(memberId: ObjectId, propertyId: ObjectId): Promise<Property> {
-		const search: T = {
-			_id: propertyId,
-			propertyStatus: PropertyStatus.ACTIVE,
-		};
-
-		const targetProperty: Property | null = await this.propertyModel
-			.findOne(search)
+	/** Every active admin is told that a stay is waiting for review. */
+	private async notifyAdmins(property: Property): Promise<void> {
+		const admins = await this.memberModel
+			.find({ memberType: MemberType.ADMIN, memberStatus: MemberStatus.ACTIVE })
+			.select('_id')
 			.lean()
 			.exec();
-		if (!targetProperty) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+		await Promise.all(
+			admins.map((admin) =>
+				this.notificationService.createNotification({
+					notificationType: NotificationType.LISTING,
+					notificationGroup: NotificationGroup.PROPERTY,
+					notificationTitle: 'submitted a stay for review',
+					notificationDesc: property.propertyTitle,
+					authorId: property.memberId,
+					receiverId: admin._id,
+					propertyId: property._id,
+				}),
+			),
+		);
+	}
 
-		if (memberId) {
+	public async getProperty(
+		memberId: ObjectId,
+		propertyId: ObjectId,
+		memberType?: MemberType,
+	): Promise<Property> {
+		// Everyone sees ACTIVE stays. Admins (to review) and the owner (to preview) also see pending / paused ones.
+		const targetProperty: Property | null = await this.propertyModel
+			.findOne({ _id: propertyId, propertyStatus: { $ne: PropertyStatus.DELETE } })
+			.lean()
+			.exec();
+		const isOwner = Boolean(memberId) && String(targetProperty?.memberId) === String(memberId);
+		const canSeePrivate = memberType === MemberType.ADMIN || isOwner;
+		if (!targetProperty || (targetProperty.propertyStatus !== PropertyStatus.ACTIVE && !canSeePrivate))
+			throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+
+		if (memberId && targetProperty.propertyStatus === PropertyStatus.ACTIVE) {
 			// record view
 			const viewInput = {
 				memberId: memberId,
@@ -114,12 +138,21 @@ export class PropertyService {
 		input: PropertyUpdate,
 	): Promise<Property> {
 		const { propertyStatus } = input;
+		// Only an admin can publish a stay: hosts never set PENDING, and a pending stay
+		// can be edited or deleted but not switched to ACTIVE / INACTIVE.
+		if (propertyStatus === PropertyStatus.PENDING) throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+		const togglesVisibility =
+			propertyStatus === PropertyStatus.ACTIVE || propertyStatus === PropertyStatus.INACTIVE;
 		const deletedAt =
 			propertyStatus === PropertyStatus.DELETE ? moment().toDate() : undefined;
 		const search: T = {
 			_id: input._id,
 			memberId: memberId,
-			propertyStatus: { $in: [PropertyStatus.ACTIVE, PropertyStatus.INACTIVE] },
+			propertyStatus: {
+				$in: togglesVisibility
+					? [PropertyStatus.ACTIVE, PropertyStatus.INACTIVE]
+					: [PropertyStatus.PENDING, PropertyStatus.ACTIVE, PropertyStatus.INACTIVE],
+			},
 		};
 
 		const result = await this.propertyModel
@@ -133,14 +166,16 @@ export class PropertyService {
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
-		if (deletedAt) {
-			await this.memberService.memberStatsEditor({
-				_id: memberId,
-				targetKey: 'memberProperties',
-				modifier: -1,
-			});
-		}
+		if (propertyStatus) await this.syncHostStayCount(memberId);
 		return result;
+	}
+
+	/** memberProperties = the host's public (ACTIVE) stays, so the profile count matches the visible list. */
+	private async syncHostStayCount(memberId: ObjectId): Promise<void> {
+		const activeStays = await this.propertyModel
+			.countDocuments({ memberId, propertyStatus: PropertyStatus.ACTIVE })
+			.exec();
+		await this.memberModel.updateOne({ _id: memberId }, { memberProperties: activeStays }).exec();
 	}
 
 	public async getProperties(
@@ -346,33 +381,36 @@ export class PropertyService {
 		return result[0];
 	}
 
-	public async updatePropertyByAdmin(input: PropertyUpdate): Promise<Property> {
+	public async updatePropertyByAdmin(adminId: ObjectId, input: PropertyUpdate): Promise<Property> {
 		const { propertyStatus } = input;
 		const deletedAt =
 			propertyStatus === PropertyStatus.DELETE ? moment().toDate() : undefined;
 		const search: T = {
 			_id: input._id,
-			propertyStatus: { $in: [PropertyStatus.ACTIVE, PropertyStatus.INACTIVE] },
+			propertyStatus: { $in: [PropertyStatus.PENDING, PropertyStatus.ACTIVE, PropertyStatus.INACTIVE] },
 		};
 
-		const result = await this.propertyModel
-			.findOneAndUpdate(
-				search,
-				{ ...input, ...(deletedAt ? { deletedAt } : {}) },
-				{
-					new: true,
-				},
-			)
+		// new: false returns the stay as it was, so a decision on a pending stay can be detected.
+		const previous = await this.propertyModel
+			.findOneAndUpdate(search, { ...input, ...(deletedAt ? { deletedAt } : {}) }, { new: false })
 			.exec();
-		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		if (!previous) throw new InternalServerErrorException(Message.UPDATE_FAILED);
+		const result = (await this.propertyModel.findById(previous._id).exec()) as Property;
 
-		if (deletedAt) {
-			await this.memberService.memberStatsEditor({
-				_id: result.memberId,
-				targetKey: 'memberProperties',
-				modifier: -1,
+		// Approve (PENDING → ACTIVE) or reject (PENDING → DELETE): tell the host.
+		if (previous.propertyStatus === PropertyStatus.PENDING && (propertyStatus === PropertyStatus.ACTIVE || deletedAt)) {
+			await this.notificationService.createNotification({
+				notificationType: NotificationType.LISTING,
+				notificationGroup: NotificationGroup.PROPERTY,
+				notificationTitle: deletedAt ? 'Did not approve your stay' : 'Approved your stay',
+				notificationDesc: previous.propertyTitle,
+				authorId: adminId,
+				receiverId: previous.memberId,
+				propertyId: previous._id,
 			});
 		}
+
+		if (propertyStatus) await this.syncHostStayCount(result.memberId);
 		return result;
 	}
 

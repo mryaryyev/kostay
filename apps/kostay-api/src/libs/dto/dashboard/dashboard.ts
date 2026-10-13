@@ -15,6 +15,10 @@ export class AdminDashboard {
 	@Field(() => Int)
 	pausedStays: number;
 
+	/** New stays waiting for admin approval. */
+	@Field(() => Int)
+	pendingStays: number;
+
 	@Field(() => Int)
 	activeArticles: number;
 
