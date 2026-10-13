@@ -11,6 +11,7 @@ registerEnumType(PropertyType, {
 });
 
 export enum PropertyStatus {
+	PENDING = 'PENDING', // new stay waiting for admin approval
 	ACTIVE = 'ACTIVE',
 	INACTIVE = 'INACTIVE',
 	DELETE = 'DELETE',
@@ -27,7 +28,6 @@ export enum PropertyLocation {
 	GYEONGJU = 'GYEONGJU',
 	GWANGJU = 'GWANGJU',
 	CHONJU = 'CHONJU',
-	DAEJON = 'DAEJON',
 	JEJU = 'JEJU',
 }
 registerEnumType(PropertyLocation, {
