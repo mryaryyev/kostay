@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, Inject } from '@nestjs/common';
 import {
 	OnGatewayInit,
 	SubscribeMessage,
@@ -11,10 +11,14 @@ import { AuthService } from '../components/auth/auth.service';
 import * as url from 'url';
 import { Member } from '../libs/dto/member/member';
 
+import { Redis } from 'ioredis';
+import { REDIS_CLIENT } from '../database/redis/redis.module';
+
 interface MessagePayload {
 	event: string;
 	text: string;
 	memberData: Member | null;
+	createdAt: string;
 }
 
 interface InfoPayload {
@@ -24,6 +28,10 @@ interface InfoPayload {
 	action: string;
 }
 
+/** Redis list holding the chat history, newest first (LPUSH), trimmed to CHAT_LIMIT. */
+const CHAT_KEY = 'chat:messages';
+const CHAT_LIMIT = 50;
+
 @WebSocketGateway({ transports: ['websocket'], secure: false })
 export class SocketGateway implements OnGatewayInit {
 	private logger: Logger = new Logger('SocketEventsGateway');
@@ -31,13 +39,33 @@ export class SocketGateway implements OnGatewayInit {
 	private clientsAuthMap = new Map<WebSocket, Member | null>();
 	private messagesList: MessagePayload[] = [];
 
-	constructor(private authService: AuthService) {}
+	constructor(
+		private authService: AuthService,
+		@Inject(REDIS_CLIENT) private readonly redis: Redis,
+	) {}
 
 	@WebSocketServer()
 	server: Server;
 
 	public afterInit() {
 		this.logger.verbose(`WebSocket Server Initialized & total: [${this.summaryClient}]`);
+	}
+
+	/** Last messages, oldest first. Falls back to memory when Redis is down. */
+	private async readMessages(): Promise<MessagePayload[]> {
+		if (this.redis.status !== 'ready') return this.messagesList;
+		const raw = await this.redis.lrange(CHAT_KEY, 0, CHAT_LIMIT - 1);
+		return raw.map((item) => JSON.parse(item) as MessagePayload).reverse();
+	}
+
+	/** Keeps a memory copy (fallback) and writes to Redis when it is up. */
+	private async saveMessage(message: MessagePayload): Promise<void> {
+		this.messagesList.push(message);
+		if (this.messagesList.length > CHAT_LIMIT)
+			this.messagesList.splice(0, this.messagesList.length - CHAT_LIMIT);
+		if (this.redis.status !== 'ready') return;
+		await this.redis.lpush(CHAT_KEY, JSON.stringify(message));
+		await this.redis.ltrim(CHAT_KEY, 0, CHAT_LIMIT - 1);
 	}
 
 	private async retrieveAuth(req: any): Promise<Member | null> {
@@ -66,7 +94,9 @@ export class SocketGateway implements OnGatewayInit {
 			action: 'joined',
 		};
 		this.emitMessage(infoMsg);
-		client.send(JSON.stringify({ event: 'getMessages', list: this.messagesList }));
+		client.send(
+			JSON.stringify({ event: 'getMessages', list: await this.readMessages() }),
+		);
 	}
 
 	public handleDisconnect(client: WebSocket) {
@@ -87,21 +117,19 @@ export class SocketGateway implements OnGatewayInit {
 	}
 
 	@SubscribeMessage('message')
-	public handleMessage(client: WebSocket, payload: string): void {
+	public async handleMessage(client: WebSocket, payload: string): Promise<void> {
 		const authMember = this.clientsAuthMap.get(client) ?? null;
 		const newMessage: MessagePayload = {
 			event: 'message',
 			text: payload,
 			memberData: authMember,
+			createdAt: new Date().toISOString(),
 		};
 
 		const clientNick: string = authMember?.memberNick ?? 'Guest';
 		this.logger.verbose(`NEW MESSAGE [${clientNick}]: ${payload}`);
 
-		this.messagesList.push(newMessage);
-		if (this.messagesList.length > 5)
-			this.messagesList.splice(0, this.messagesList.length - 5);
-
+		await this.saveMessage(newMessage);
 		this.emitMessage(newMessage);
 	}
 
