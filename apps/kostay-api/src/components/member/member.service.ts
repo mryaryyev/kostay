@@ -150,7 +150,16 @@ export class MemberService {
 		const match: T = { memberType: MemberType.AGENT, memberStatus: MemberStatus.ACTIVE };
 		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC };
 
-		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
+		const searchText = text?.trim();
+		if (searchText) {
+			const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+			const regex = new RegExp(escapedText, 'i');
+			match.$or = [
+				{ memberNick: { $regex: regex } },
+				{ memberFullName: { $regex: regex } },
+				{ memberAddress: { $regex: regex } },
+			];
+		}
 		console.log('match:', match);
 
 		const result: Members[] = await this.memberModel
