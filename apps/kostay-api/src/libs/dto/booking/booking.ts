@@ -1,0 +1,153 @@
+import { Field, Float, Int, ObjectType } from '@nestjs/graphql';
+import { BookingStatus } from '../../enums/booking.enum';
+import { PaymentStatus } from '../../enums/payment.enum';
+
+/** Slim stay info shown on booking cards (from MongoDB). */
+@ObjectType('BookingPropertyData')
+export class BookingPropertyData {
+	@Field(() => String)
+	_id: string;
+
+	@Field(() => String)
+	propertyTitle: string;
+
+	@Field(() => String, { nullable: true })
+	propertyImage?: string;
+
+	@Field(() => String)
+	propertyLocation: string;
+
+	@Field(() => String, { nullable: true })
+	propertyAddress?: string;
+}
+
+/** Slim guest info shown to the host on reservation cards (from MongoDB). */
+@ObjectType('BookingGuestData')
+export class BookingGuestData {
+	@Field(() => String)
+	_id: string;
+
+	@Field(() => String)
+	memberNick: string;
+
+	@Field(() => String, { nullable: true })
+	memberFullName?: string;
+
+	@Field(() => String, { nullable: true })
+	memberImage?: string;
+
+	@Field(() => String, { nullable: true })
+	memberPhone?: string;
+}
+
+@ObjectType('Booking')
+export class BookingDto {
+	@Field(() => String)
+	id: string;
+
+	@Field(() => String)
+	propertyId: string;
+
+	@Field(() => String)
+	memberId: string;
+
+	@Field(() => String)
+	checkIn: string;
+
+	@Field(() => String)
+	checkOut: string;
+
+	@Field(() => Int)
+	guestsCount: number;
+
+	@Field(() => Float)
+	totalPrice: number;
+
+	@Field(() => BookingStatus)
+	status: BookingStatus;
+
+	@Field(() => Date)
+	createdAt: Date;
+
+	@Field(() => Date)
+	updatedAt: Date;
+
+	@Field(() => PaymentStatus, { nullable: true })
+	paymentStatus?: PaymentStatus;
+
+	@Field(() => String, { nullable: true })
+	paymentMethod?: string;
+
+	@Field(() => BookingPropertyData, { nullable: true })
+	propertyData?: BookingPropertyData;
+
+	@Field(() => BookingGuestData, { nullable: true })
+	guestData?: BookingGuestData;
+}
+
+@ObjectType('BookingStatusCount')
+export class BookingStatusCount {
+	@Field(() => BookingStatus)
+	status: BookingStatus;
+
+	@Field(() => Int)
+	count: number;
+}
+
+/** Admin summary over all bookings (amounts in KRW). */
+@ObjectType('BookingPaymentSummary')
+export class BookingPaymentSummary {
+	@Field(() => Float)
+	paidTotal: number;
+
+	@Field(() => Float)
+	refundedTotal: number;
+}
+
+@ObjectType('Bookings')
+export class BookingsDto {
+	@Field(() => [BookingDto])
+	list: BookingDto[];
+
+	@Field(() => Int)
+	total: number;
+
+	// Admin only: counts per status (for the tabs) and payment totals
+	@Field(() => [BookingStatusCount], { nullable: true })
+	statusCounter?: BookingStatusCount[];
+
+	@Field(() => BookingPaymentSummary, { nullable: true })
+	paymentSummary?: BookingPaymentSummary;
+}
+
+/** A taken date range (check-out day itself is free), used to block dates on the stay page. */
+@ObjectType('BookedRange')
+export class BookedRange {
+	@Field(() => String)
+	checkIn: string;
+
+	@Field(() => String)
+	checkOut: string;
+}
+
+/** Host summary on My Page → Reservations (own stays only, amounts in KRW). */
+@ObjectType('HostEarnings')
+export class HostEarnings {
+	// SUCCEEDED payments paid this month; refunded payments are excluded
+	@Field(() => Float)
+	monthRevenue: number;
+
+	@Field(() => Float)
+	totalRevenue: number;
+
+	@Field(() => Int)
+	activeBookings: number;
+
+	// CONFIRMED bookings that check in during the next 7 days (today included)
+	@Field(() => Int)
+	upcomingCheckIns: number;
+
+	// Nights of CONFIRMED and COMPLETED bookings
+	@Field(() => Int)
+	nightsBooked: number;
+}

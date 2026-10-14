@@ -1,0 +1,482 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { InjectRepository } from '@nestjs/typeorm';
+import moment from 'moment';
+import { Model, ObjectId, Types } from 'mongoose';
+import {
+	Between,
+	DataSource,
+	FindOptionsWhere,
+	In,
+	LessThanOrEqual,
+	MoreThanOrEqual,
+	Repository,
+} from 'typeorm';
+import { Booking } from '../../database/postgres/entities/booking.entity';
+import {
+	BookedRange,
+	BookingDto,
+	BookingStatusCount,
+	HostEarnings,
+	BookingGuestData,
+	BookingPropertyData,
+	BookingsDto,
+} from '../../libs/dto/booking/booking';
+import { Member } from '../../libs/dto/member/member';
+import {
+	AllBookingsInquiry,
+	BookAndPayInput,
+	BookingsInquiry,
+} from '../../libs/dto/booking/booking.input';
+import { Property } from '../../libs/dto/property/property';
+import { Message } from '../../libs/enums/common.enum';
+import { BookingStatus } from '../../libs/enums/booking.enum';
+import { PropertyStatus } from '../../libs/enums/property.enum';
+import { shapeIntoMongoObjectId } from '../../libs/config';
+import { Payment } from '../../database/postgres/entities/payment.entity';
+import { PaymentStatus } from '../../libs/enums/payment.enum';
+import { NotificationService } from '../notification/notification.service';
+import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
+
+@Injectable()
+export class BookingService {
+	constructor(
+		@InjectRepository(Booking) private readonly bookingRepository: Repository<Booking>,
+		@InjectModel('Property') private readonly propertyModel: Model<Property>,
+		@InjectModel('Member') private readonly memberModel: Model<Member>,
+		private readonly dataSource: DataSource,
+		private readonly notificationService: NotificationService,
+	) {}
+
+	/**
+	 * Instant Book: validate, then save a CONFIRMED booking and its SUCCEEDED payment in one transaction.
+	 * Nothing is stored unless both succeed, so an unpaid booking never blocks dates.
+	 */
+	public async bookAndPay(
+		memberId: ObjectId,
+		input: BookAndPayInput,
+	): Promise<BookingDto> {
+		const { propertyId, checkIn, checkOut, guestsCount, paymentMethod } = input;
+
+		// 1. dates
+		const start = moment(checkIn, 'YYYY-MM-DD', true);
+		const end = moment(checkOut, 'YYYY-MM-DD', true);
+		if (!start.isValid() || !end.isValid()) throw new BadRequestException('Invalid date');
+		if (start.isBefore(moment().startOf('day')))
+			throw new BadRequestException('Check-in cannot be in the past');
+		const nights = end.diff(start, 'days');
+		if (nights < 1) throw new BadRequestException('Check-out must be after check-in');
+
+		// 2. property (MongoDB)
+		const property = await this.propertyModel
+			.findOne({
+				_id: shapeIntoMongoObjectId(propertyId),
+				propertyStatus: PropertyStatus.ACTIVE,
+			})
+			.lean()
+			.exec();
+		if (!property) throw new BadRequestException(Message.NO_DATA_FOUND);
+		const guestId = (memberId as unknown as Types.ObjectId).toString();
+		const hostId = (property.memberId as unknown as Types.ObjectId).toString();
+		const propertyIdStr = (property._id as unknown as Types.ObjectId).toString();
+		if (hostId === guestId) throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+		if (guestsCount > property.maxGuests)
+			throw new BadRequestException('Too many guests');
+
+		// 3. availability (PostgreSQL); the excl_booking_overlap constraint is the final guard
+		const hasConflict = await this.bookingRepository
+			.createQueryBuilder('b')
+			.where('b.propertyId = :propertyId', { propertyId: propertyIdStr })
+			.andWhere('b.status IN (:...statuses)', {
+				statuses: [BookingStatus.PENDING, BookingStatus.CONFIRMED],
+			})
+			.andWhere('b.checkIn < :checkOut AND b.checkOut > :checkIn', { checkIn, checkOut })
+			.getExists();
+		if (hasConflict) throw new BadRequestException('Dates are not available');
+
+		// 4. booking + payment together (amount always from the server, never from the client)
+		const totalPrice = nights * property.pricePerNight;
+		let saved: Booking;
+		try {
+			saved = await this.dataSource.transaction(async (manager) => {
+				const booking = await manager.save(
+					manager.create(Booking, {
+						propertyId: propertyIdStr,
+						memberId: guestId,
+						checkIn,
+						checkOut,
+						guestsCount,
+						totalPrice,
+						status: BookingStatus.CONFIRMED,
+					}),
+				);
+				await manager.save(
+					manager.create(Payment, {
+						bookingId: booking.id,
+						amount: totalPrice,
+						paymentMethod,
+						status: PaymentStatus.SUCCEEDED, // simulated: no real payment gateway yet
+						paidAt: new Date(),
+					}),
+				);
+				return booking;
+			});
+		} catch (err) {
+			// excl_booking_overlap: another guest booked the same dates a moment earlier.
+			if ((err as { code?: string })?.code === '23P01')
+				throw new BadRequestException('Dates are not available');
+			throw err;
+		}
+
+		await this.notifyBooking(
+			saved,
+			guestId,
+			hostId,
+			'booked your stay',
+			property.propertyTitle,
+		);
+		return { ...saved, paymentStatus: PaymentStatus.SUCCEEDED };
+	}
+
+	/** Public: active (PENDING / CONFIRMED) ranges of a stay that end today or later. No guest data is exposed. */
+	public async getBookedDates(propertyId: string): Promise<BookedRange[]> {
+		const today = moment().format('YYYY-MM-DD');
+		const bookings = await this.bookingRepository
+			.createQueryBuilder('b')
+			.select(['b.checkIn', 'b.checkOut'])
+			.where('b.propertyId = :propertyId', { propertyId })
+			.andWhere('b.status IN (:...statuses)', {
+				statuses: [BookingStatus.PENDING, BookingStatus.CONFIRMED],
+			})
+			.andWhere('b.checkOut > :today', { today })
+			.orderBy('b.checkIn', 'ASC')
+			.getMany();
+		return bookings.map((b) => ({ checkIn: b.checkIn, checkOut: b.checkOut }));
+	}
+
+	public async getMyBookings(
+		memberId: ObjectId,
+		input: BookingsInquiry,
+	): Promise<BookingsDto> {
+		const guestId = (memberId as unknown as Types.ObjectId).toString();
+		return await this.findBookings(
+			{ memberId: guestId, ...(input.status ? { status: input.status } : {}) },
+			input,
+		);
+	}
+
+	public async getHostBookings(
+		memberId: ObjectId,
+		input: BookingsInquiry,
+	): Promise<BookingsDto> {
+		const propertyIds = await this.getHostPropertyIds(memberId);
+		if (!propertyIds.length) return { list: [], total: 0 };
+
+		return await this.findBookings(
+			{ propertyId: In(propertyIds), ...(input.status ? { status: input.status } : {}) },
+			input,
+		);
+	}
+
+	/** Totals for the host's own stays: revenue from PostgreSQL payments, stay ids from MongoDB. */
+	public async getHostEarnings(memberId: ObjectId): Promise<HostEarnings> {
+		const empty: HostEarnings = {
+			monthRevenue: 0,
+			totalRevenue: 0,
+			activeBookings: 0,
+			upcomingCheckIns: 0,
+			nightsBooked: 0,
+		};
+		const propertyIds = await this.getHostPropertyIds(memberId);
+		if (!propertyIds.length) return empty;
+
+		const today = moment().format('YYYY-MM-DD');
+		const weekEnd = moment().add(6, 'days').format('YYYY-MM-DD');
+		const monthStart = moment().startOf('month').toDate();
+
+		const revenue = async (from?: Date) => {
+			const query = this.dataSource
+				.getRepository(Payment)
+				.createQueryBuilder('p')
+				.innerJoin('p.booking', 'b')
+				.select('COALESCE(SUM(p.amount), 0)', 'total')
+				.where('p.status = :status', { status: PaymentStatus.SUCCEEDED })
+				.andWhere('b.propertyId IN (:...propertyIds)', { propertyIds });
+			if (from) query.andWhere('p.paidAt >= :from', { from });
+			const row = await query.getRawOne<{ total: string }>();
+			return Number(row?.total ?? 0);
+		};
+
+		const [monthRevenue, totalRevenue, bookingRow] = await Promise.all([
+			revenue(monthStart),
+			revenue(),
+			this.bookingRepository
+				.createQueryBuilder('b')
+				.select(`COUNT(*) FILTER (WHERE b.status = :confirmed)::int`, 'activeBookings')
+				.addSelect(
+					`COUNT(*) FILTER (WHERE b.status = :confirmed AND b.checkIn BETWEEN :today AND :weekEnd)::int`,
+					'upcomingCheckIns',
+				)
+				// date - date is a whole number of days in PostgreSQL
+				.addSelect(
+					`COALESCE(SUM(b.checkOut - b.checkIn) FILTER (WHERE b.status IN (:confirmed, :completed)), 0)::int`,
+					'nightsBooked',
+				)
+				.where('b.propertyId IN (:...propertyIds)', { propertyIds })
+				.setParameters({
+					confirmed: BookingStatus.CONFIRMED,
+					completed: BookingStatus.COMPLETED,
+					today,
+					weekEnd,
+				})
+				.getRawOne<
+					Pick<HostEarnings, 'activeBookings' | 'upcomingCheckIns' | 'nightsBooked'>
+				>(),
+		]);
+
+		return { ...empty, ...bookingRow, monthRevenue, totalRevenue };
+	}
+
+	public async cancelBooking(memberId: ObjectId, bookingId: string): Promise<BookingDto> {
+		const guestId = (memberId as unknown as Types.ObjectId).toString();
+		const cancelled = await this.cancelAndRefund({ id: bookingId, memberId: guestId });
+
+		// Tell the host after the transaction is committed.
+		const property = await this.propertyModel
+			.findById(shapeIntoMongoObjectId(cancelled.propertyId))
+			.select('memberId propertyTitle')
+			.lean()
+			.exec();
+		if (property) {
+			await this.notifyBooking(
+				cancelled,
+				guestId,
+				(property.memberId as unknown as Types.ObjectId).toString(),
+				'cancelled their booking',
+				property.propertyTitle,
+			);
+		}
+		return cancelled;
+	}
+
+	/** ADMIN **/
+
+	/** Every booking (newest first) with status counts for the tabs and the paid / refunded totals. */
+	public async getAllBookingsByAdmin(input: AllBookingsInquiry): Promise<BookingsDto> {
+		const { checkInFrom, checkInTo } = input;
+		const range: FindOptionsWhere<Booking> = {};
+		if (checkInFrom && checkInTo) range.checkIn = Between(checkInFrom, checkInTo);
+		else if (checkInFrom) range.checkIn = MoreThanOrEqual(checkInFrom);
+		else if (checkInTo) range.checkIn = LessThanOrEqual(checkInTo);
+
+		const [result, statusRows, paymentRows] = await Promise.all([
+			this.findBookings(
+				{ ...range, ...(input.status ? { status: input.status } : {}) },
+				input,
+			),
+			// Tab counts ignore the selected status, so every tab shows its own number.
+			this.countByStatus(checkInFrom, checkInTo),
+			this.dataSource
+				.getRepository(Payment)
+				.createQueryBuilder('p')
+				.select('p.status', 'status')
+				.addSelect('COALESCE(SUM(p.amount), 0)', 'amount')
+				.where('p.status IN (:...statuses)', {
+					statuses: [PaymentStatus.SUCCEEDED, PaymentStatus.REFUNDED],
+				})
+				.groupBy('p.status')
+				.getRawMany<{ status: PaymentStatus; amount: string }>(),
+		]);
+
+		const amountOf = (status: PaymentStatus) =>
+			Number(paymentRows.find((row) => row.status === status)?.amount ?? 0);
+		return {
+			...result,
+			statusCounter: statusRows,
+			paymentSummary: {
+				paidTotal: amountOf(PaymentStatus.SUCCEEDED),
+				refundedTotal: amountOf(PaymentStatus.REFUNDED),
+			},
+		};
+	}
+
+	private async countByStatus(
+		checkInFrom?: string,
+		checkInTo?: string,
+	): Promise<BookingStatusCount[]> {
+		const query = this.bookingRepository
+			.createQueryBuilder('b')
+			.select('b.status', 'status')
+			.addSelect('COUNT(*)::int', 'count')
+			.groupBy('b.status');
+		if (checkInFrom) query.andWhere('b.checkIn >= :checkInFrom', { checkInFrom });
+		if (checkInTo) query.andWhere('b.checkIn <= :checkInTo', { checkInTo });
+		return await query.getRawMany<BookingStatusCount>();
+	}
+
+	/** Admin cancel (e.g. a problem with the stay): full refund, guest and host are both told. */
+	public async cancelBookingByAdmin(
+		adminId: ObjectId,
+		bookingId: string,
+	): Promise<BookingDto> {
+		const cancelled = await this.cancelAndRefund({ id: bookingId });
+		const authorId = (adminId as unknown as Types.ObjectId).toString();
+
+		const property = await this.propertyModel
+			.findById(shapeIntoMongoObjectId(cancelled.propertyId))
+			.select('memberId propertyTitle')
+			.lean()
+			.exec();
+		const propertyTitle = property?.propertyTitle ?? 'Your stay';
+		await this.notifyBooking(
+			cancelled,
+			authorId,
+			cancelled.memberId,
+			'cancelled your booking',
+			propertyTitle,
+		);
+		if (property) {
+			await this.notifyBooking(
+				cancelled,
+				authorId,
+				(property.memberId as unknown as Types.ObjectId).toString(),
+				'cancelled a booking of your stay',
+				propertyTitle,
+			);
+		}
+		return cancelled;
+	}
+
+	/** Shared by guest and admin cancel: only PENDING / CONFIRMED, payment refunded in the same transaction. */
+	private async cancelAndRefund(where: FindOptionsWhere<Booking>): Promise<Booking> {
+		return await this.dataSource.transaction(async (manager) => {
+			const booking = await manager.findOne(Booking, {
+				where,
+				lock: { mode: 'pessimistic_write' },
+			});
+			if (!booking) throw new BadRequestException(Message.NO_DATA_FOUND);
+			if (![BookingStatus.PENDING, BookingStatus.CONFIRMED].includes(booking.status))
+				throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+
+			// full refund if the booking was already paid
+			await manager.update(
+				Payment,
+				{ bookingId: booking.id, status: PaymentStatus.SUCCEEDED },
+				{ status: PaymentStatus.REFUNDED },
+			);
+
+			booking.status = BookingStatus.CANCELLED;
+			return await manager.save(booking);
+		});
+	}
+
+	private async getHostPropertyIds(memberId: ObjectId): Promise<string[]> {
+		const properties = await this.propertyModel
+			.find({ memberId })
+			.select('_id')
+			.lean()
+			.exec();
+		return properties.map((p) => (p._id as unknown as Types.ObjectId).toString());
+	}
+
+	/** BOOKING notification for the other side; desc shows stay + dates (plain YYYY-MM-DD). */
+	private async notifyBooking(
+		booking: Booking,
+		authorId: string,
+		receiverId: string,
+		title: string,
+		propertyTitle: string,
+	): Promise<void> {
+		await this.notificationService.createNotification({
+			notificationType: NotificationType.BOOKING,
+			notificationGroup: NotificationGroup.BOOKING,
+			notificationTitle: title,
+			notificationDesc: `${propertyTitle} · ${booking.checkIn} → ${booking.checkOut}`,
+			authorId: shapeIntoMongoObjectId(authorId),
+			receiverId: shapeIntoMongoObjectId(receiverId),
+			propertyId: shapeIntoMongoObjectId(booking.propertyId),
+		});
+	}
+
+	private async findBookings(
+		where: FindOptionsWhere<Booking>,
+		input: BookingsInquiry,
+	): Promise<BookingsDto> {
+		const [list, total] = await this.bookingRepository.findAndCount({
+			where,
+			order: { createdAt: 'DESC' },
+			skip: (input.page - 1) * input.limit,
+			take: input.limit,
+		});
+		const withPayments = await this.attachPaymentStatus(list);
+		return { list: await this.attachDisplayData(withPayments), total };
+	}
+
+	private async attachPaymentStatus(bookings: Booking[]): Promise<BookingDto[]> {
+		if (!bookings.length) return [];
+
+		const payments = await this.dataSource.getRepository(Payment).find({
+			where: { bookingId: In(bookings.map((b) => b.id)) },
+			order: { createdAt: 'ASC' },
+		});
+		const latest = new Map<string, Payment>();
+		payments.forEach((p) => latest.set(p.bookingId, p)); // newest overwrites older
+
+		return bookings.map((b) => ({
+			...b,
+			paymentStatus: latest.get(b.id)?.status,
+			paymentMethod: latest.get(b.id)?.paymentMethod,
+		}));
+	}
+
+	/** Booking rows live in PostgreSQL; stay and guest details come from MongoDB in one query each. */
+	private async attachDisplayData(bookings: BookingDto[]): Promise<BookingDto[]> {
+		if (!bookings.length) return [];
+
+		const propertyIds = [...new Set(bookings.map((b) => b.propertyId))];
+		const guestIds = [...new Set(bookings.map((b) => b.memberId))];
+		const [properties, guests] = await Promise.all([
+			this.propertyModel
+				.find({ _id: { $in: propertyIds.map(shapeIntoMongoObjectId) } })
+				.select('propertyTitle propertyImages propertyLocation propertyAddress')
+				.lean()
+				.exec(),
+			this.memberModel
+				.find({ _id: { $in: guestIds.map(shapeIntoMongoObjectId) } })
+				.select('memberNick memberFullName memberImage memberPhone')
+				.lean()
+				.exec(),
+		]);
+
+		const propertyMap = new Map<string, BookingPropertyData>(
+			properties.map((p) => [
+				(p._id as unknown as Types.ObjectId).toString(),
+				{
+					_id: (p._id as unknown as Types.ObjectId).toString(),
+					propertyTitle: p.propertyTitle,
+					propertyImage: p.propertyImages?.[0],
+					propertyLocation: p.propertyLocation,
+					propertyAddress: p.propertyAddress,
+				},
+			]),
+		);
+		const guestMap = new Map<string, BookingGuestData>(
+			guests.map((m) => [
+				(m._id as unknown as Types.ObjectId).toString(),
+				{
+					_id: (m._id as unknown as Types.ObjectId).toString(),
+					memberNick: m.memberNick,
+					memberFullName: m.memberFullName,
+					memberImage: m.memberImage,
+					memberPhone: m.memberPhone,
+				},
+			]),
+		);
+
+		return bookings.map((b) => ({
+			...b,
+			propertyData: propertyMap.get(b.propertyId),
+			guestData: guestMap.get(b.memberId),
+		}));
+	}
+}
