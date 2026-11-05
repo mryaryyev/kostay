@@ -1,0 +1,56 @@
+services:
+  kostay-api:
+    container_name: kostay-api
+    restart: always
+    image: node:22
+    ports:
+      - 4001:3007
+    volumes:
+      - ./:/usr/src/kostay
+    working_dir: /usr/src/kostay
+    environment:
+      REDIS_URL: redis://kostay-redis:6379
+      TZ: Asia/Seoul
+    depends_on:
+      - kostay-redis
+    networks:
+      - monorepo-network
+
+    # FOR PRODUCTION
+    command: bash -c "npm install && npm run build && npm run start:prod"
+
+  kostay-batch:
+    container_name: kostay-batch
+    restart: unless-stopped
+    image: node:22
+    ports:
+      - 4002:3008
+    volumes:
+      - ./:/usr/src/kostay
+    working_dir: /usr/src/kostay
+    environment:
+      REDIS_URL: redis://kostay-redis:6379
+      TZ: Asia/Seoul
+    depends_on:
+      - kostay-redis
+    networks:
+      - monorepo-network
+
+    # FOR PRODUCTION
+    command: bash -c "npm install && npm run build && npm run start:prod:batch"
+
+  kostay-redis:
+    container_name: kostay-redis
+    restart: always
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    networks:
+      - monorepo-network
+
+networks:
+  monorepo-network:
+    driver: bridge
+
+volumes:
+  redis-data:
