@@ -33,7 +33,7 @@ export class BatchService {
 			.updateMany(
 				{
 					memberStatus: MemberStatus.ACTIVE,
-					memberType: MemberType.AGENT,
+					memberType: MemberType.HOST,
 				},
 				{ memberRank: 0 },
 			)
@@ -56,16 +56,16 @@ export class BatchService {
 		await Promise.all(promisedList);
 	}
 
-	public async batchTopAgents(): Promise<void> {
-		const agents: Member[] = await this.memberModel
+	public async batchTopHosts(): Promise<void> {
+		const hosts: Member[] = await this.memberModel
 			.find({
-				memberType: MemberType.AGENT,
+				memberType: MemberType.HOST,
 				memberStatus: MemberStatus.ACTIVE,
 				memberRank: 0,
 			})
 			.exec();
 
-		const promisedList = agents.map(async (ele: Member) => {
+		const promisedList = hosts.map(async (ele: Member) => {
 			const { _id, memberProperties, memberLikes, memberArticles, memberViews } = ele;
 			const rank =
 				memberProperties * 5 + memberArticles * 3 + memberLikes * 2 + memberViews * 1;

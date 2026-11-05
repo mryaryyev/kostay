@@ -1,6 +1,6 @@
 import { ObjectId } from 'bson';
 
-export const availableAgentSorts = [
+export const availableHostSorts = [
 	'createdAt',
 	'updatedAt',
 	'memberLikes',

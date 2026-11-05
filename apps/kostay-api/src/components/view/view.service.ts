@@ -60,7 +60,7 @@ export class ViewService {
 						list: [
 							{ $skip: (page - 1) * limit },
 							{ $limit: limit },
-							lookupVisit, // agent info (who created this property)
+							lookupVisit, // host info (who created this property)
 							{ $unwind: '$visitedProperty.memberData' },
 						],
 						metaCounter: [{ $count: 'total' }],

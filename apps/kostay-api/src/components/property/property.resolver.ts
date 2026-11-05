@@ -2,7 +2,7 @@ import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { PropertyService } from './property.service';
 import { Properties, Property } from '../../libs/dto/property/property';
 import {
-	AgentPropertiesInquiry,
+	HostPropertiesInquiry,
 	AllPropertiesInquiry,
 	OrdinaryInquiry,
 	PropertiesInquiry,
@@ -23,7 +23,7 @@ import { AuthGuard } from '../auth/guards/auth.guard';
 export class PropertyResolver {
 	constructor(private readonly propertyService: PropertyService) {}
 
-	@Roles(MemberType.AGENT)
+	@Roles(MemberType.HOST)
 	@UseGuards(RolesGuard)
 	@Mutation(() => Property)
 	public async createProperty(
@@ -47,7 +47,7 @@ export class PropertyResolver {
 		return await this.propertyService.getProperty(memberId, propertyId, memberType);
 	}
 
-	@Roles(MemberType.AGENT)
+	@Roles(MemberType.HOST)
 	@UseGuards(RolesGuard)
 	@Mutation(() => Property)
 	public async updateProperty(
@@ -89,15 +89,15 @@ export class PropertyResolver {
 		return await this.propertyService.getVisited(memberId, input);
 	}
 
-	@Roles(MemberType.AGENT)
+	@Roles(MemberType.HOST)
 	@UseGuards(RolesGuard)
 	@Query(() => Properties)
-	public async getAgentProperties(
-		@Args('input') input: AgentPropertiesInquiry,
+	public async getHostProperties(
+		@Args('input') input: HostPropertiesInquiry,
 		@AuthMember('_id') memberId: ObjectId,
 	): Promise<Properties> {
-		console.log('Query: getAgentProperties');
-		return await this.propertyService.getAgentProperties(memberId, input);
+		console.log('Query: getHostProperties');
+		return await this.propertyService.getHostProperties(memberId, input);
 	}
 
 	@UseGuards(AuthGuard)

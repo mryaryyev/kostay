@@ -73,7 +73,7 @@ export class LikeService {
 						list: [
 							{ $skip: (page - 1) * limit },
 							{ $limit: limit },
-							lookupFavorite, // agent info (who created this property)
+							lookupFavorite, // host info (who created this property)
 							{ $unwind: '$favoriteProperty.memberData' },
 						],
 						metaCounter: [{ $count: 'total' }],

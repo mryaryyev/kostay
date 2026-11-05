@@ -68,7 +68,7 @@ export class DashboardService {
 			monthRevenue,
 		] = await Promise.all([
 			countMembers(MemberType.USER),
-			countMembers(MemberType.AGENT),
+			countMembers(MemberType.HOST),
 			this.propertyModel.countDocuments({ propertyStatus: PropertyStatus.ACTIVE }).exec(),
 			this.propertyModel
 				.countDocuments({ propertyStatus: PropertyStatus.INACTIVE })
