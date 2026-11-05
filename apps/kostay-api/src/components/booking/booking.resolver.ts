@@ -62,7 +62,7 @@ export class BookingResolver {
 		return await this.bookingService.cancelBooking(memberId, bookingId);
 	}
 
-	@Roles(MemberType.AGENT)
+	@Roles(MemberType.HOST)
 	@UseGuards(RolesGuard)
 	@Query(() => BookingsDto)
 	public async getHostBookings(
@@ -73,7 +73,7 @@ export class BookingResolver {
 		return await this.bookingService.getHostBookings(memberId, input);
 	}
 
-	@Roles(MemberType.AGENT)
+	@Roles(MemberType.HOST)
 	@UseGuards(RolesGuard)
 	@Query(() => HostEarnings)
 	public async getHostEarnings(

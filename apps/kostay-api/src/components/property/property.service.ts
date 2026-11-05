@@ -12,7 +12,7 @@ import { Model, ObjectId } from 'mongoose';
 import { Properties, Property } from '../../libs/dto/property/property';
 import { Direction, Message } from '../../libs/enums/common.enum';
 import {
-	AgentPropertiesInquiry,
+	HostPropertiesInquiry,
 	AllPropertiesInquiry,
 	OrdinaryInquiry,
 	PropertiesInquiry,
@@ -276,9 +276,9 @@ export class PropertyService {
 		return await this.viewService.getVisitedProperties(memberId, input);
 	}
 
-	public async getAgentProperties(
+	public async getHostProperties(
 		memberId: ObjectId,
-		input: AgentPropertiesInquiry,
+		input: HostPropertiesInquiry,
 	): Promise<Properties> {
 		const { propertyStatus } = input.search;
 		if (propertyStatus === PropertyStatus.DELETE)

@@ -4,7 +4,7 @@ import { Cron, Interval, Timeout } from '@nestjs/schedule';
 import {
 	BATCH_COMPLETE_BOOKINGS,
 	BATCH_ROLLBACK,
-	BATCH_TOP_AGENTS,
+	BATCH_TOP_HOSTS,
 	BATCH_TOP_PROPERTIES,
 } from './libs/config';
 
@@ -41,12 +41,12 @@ export class BatchController {
 		}
 	}
 
-	@Cron('40 00 01 * * *', { name: BATCH_TOP_AGENTS })
-	public async batchTopAgents() {
+	@Cron('40 00 01 * * *', { name: BATCH_TOP_HOSTS })
+	public async batchTopHosts() {
 		try {
-			this.logger['context'] = BATCH_TOP_AGENTS;
+			this.logger['context'] = BATCH_TOP_HOSTS;
 			this.logger.debug('EXECUTED!');
-			await this.batchService.batchTopAgents();
+			await this.batchService.batchTopHosts();
 		} catch (err) {
 			this.logger.error(err);
 		}
