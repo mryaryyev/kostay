@@ -198,6 +198,9 @@ export class PropertyService {
 			.aggregate([
 				{ $match: match },
 				{ $sort: sort },
+				// Join the author before $facet so items whose author was deleted are left out of both list and count.
+				lookupMember,
+				{ $unwind: '$memberData' },
 				{
 					$facet: {
 						list: [
@@ -205,8 +208,6 @@ export class PropertyService {
 							{ $limit: input.limit },
 							// meLiked
 							lookupAuthMemberLiked(memberId),
-							lookupMember,
-							{ $unwind: '$memberData' }, // [memberData] => memberData
 						],
 						metaCounter: [{ $count: 'total' }],
 					},
