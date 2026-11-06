@@ -130,15 +130,12 @@ export class CommentService {
 			.aggregate([
 				{ $match: match },
 				{ $sort: sort },
+				// Join the author before $facet so items whose author was deleted are left out of both list and count.
+				lookupMember,
+				{ $unwind: '$memberData' },
 				{
 					$facet: {
-						list: [
-							{ $skip: (input.page - 1) * input.limit },
-							{ $limit: input.limit },
-							// meLiked
-							lookupMember,
-							{ $unwind: '$memberData' },
-						],
+						list: [{ $skip: (input.page - 1) * input.limit }, { $limit: input.limit }],
 						metaCounter: [{ $count: 'total' }],
 					},
 				},
