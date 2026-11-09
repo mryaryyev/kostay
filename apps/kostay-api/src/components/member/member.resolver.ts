@@ -15,14 +15,10 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { MemberType } from '../../libs/enums/member.enum';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { MemberUpdate } from '../../libs/dto/member/member.update';
-import {
-	getSerialForImage,
-	shapeIntoMongoObjectId,
-	validMimeTypes,
-} from '../../libs/config';
+import { shapeIntoMongoObjectId, validMimeTypes } from '../../libs/config';
+import { saveUploadedImage } from '../../libs/imageProcessor';
 import { WithoutGuard } from '../auth/guards/without.guard';
 import { GraphQLUpload, FileUpload } from 'graphql-upload-minimal';
-import { createWriteStream } from 'fs';
 import { Message } from '../../libs/enums/common.enum';
 
 @Resolver()
@@ -141,21 +137,12 @@ export class MemberResolver {
 		const validMime = validMimeTypes.includes(mimetype);
 		if (!validMime) throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
 
-		const imageName = getSerialForImage(filename);
-		const url = `uploads/${target}/${imageName}`;
-		const stream = file.createReadStream();
-
-		const result = await new Promise((resolve, reject) => {
-			stream
-				.pipe(createWriteStream(url))
-				.on('finish', () => resolve(true))
-				.on('error', (err) =>
-					reject(err instanceof Error ? err : new Error('Stream error')),
-				);
-		});
-		if (!result) throw new Error(Message.UPLOAD_FAILED);
-
-		return url;
+		try {
+			return await saveUploadedImage(file.createReadStream(), target);
+		} catch (err) {
+			console.log('Error, imageUploader:', err);
+			throw new Error(Message.UPLOAD_FAILED);
+		}
 	}
 
 	@UseGuards(AuthGuard)
@@ -172,26 +159,15 @@ export class MemberResolver {
 			async (img: Promise<FileUpload>, index: number): Promise<void> => {
 				try {
 					const uploadedFile = await img;
-					const { filename, mimetype } = uploadedFile;
+					const { mimetype } = uploadedFile;
 
 					const validMime = validMimeTypes.includes(mimetype);
 					if (!validMime) throw new Error(Message.PROVIDE_ALLOWED_FORMAT);
 
-					const imageName = getSerialForImage(filename);
-					const url = `uploads/${target}/${imageName}`;
-					const stream = uploadedFile.createReadStream();
-
-					const result = await new Promise((resolve, reject) => {
-						stream
-							.pipe(createWriteStream(url))
-							.on('finish', () => resolve(true))
-							.on('error', (err) =>
-								reject(err instanceof Error ? err : new Error('Stream error')),
-							);
-					});
-					if (!result) throw new Error(Message.UPLOAD_FAILED);
-
-					uploadedImages[index] = url;
+					uploadedImages[index] = await saveUploadedImage(
+						uploadedFile.createReadStream(),
+						target,
+					);
 				} catch (err) {
 					console.log('Error, file missing!', err);
 				}
