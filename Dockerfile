@@ -19,12 +19,13 @@ FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY --from=build /app/package.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
+# --chown gives files to the "node" user while copying (no slow chown -R layer)
+COPY --chown=node:node --from=build /app/package.json ./
+COPY --chown=node:node --from=build /app/node_modules ./node_modules
+COPY --chown=node:node --from=build /app/dist ./dist
 
 # Uploaded images are mounted here from the host (see docker-compose.yml)
-RUN mkdir -p uploads && chown -R node:node /app
+RUN mkdir uploads && chown node:node uploads
 USER node
 
 # Default: API. The batch service overrides this command.
