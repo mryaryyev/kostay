@@ -38,6 +38,7 @@ import { NotificationService } from '../notification/notification.service';
 import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 import { Member } from '../../libs/dto/member/member';
 import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
+import { AiSearchService } from '../ai-search/ai-search.service';
 @Injectable()
 export class PropertyService {
 	constructor(
@@ -48,6 +49,7 @@ export class PropertyService {
 		private likeService: LikeService,
 		private notificationService: NotificationService,
 		@InjectRepository(Booking) private readonly bookingRepository: Repository<Booking>,
+		private readonly aiSearchService: AiSearchService,
 	) {}
 
 	public async createProperty(input: PropertyInput): Promise<Property> {
@@ -167,6 +169,7 @@ export class PropertyService {
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
 		if (propertyStatus) await this.syncHostStayCount(memberId);
+		this.aiSearchService.syncProperty(result);
 		return result;
 	}
 
@@ -412,6 +415,7 @@ export class PropertyService {
 		}
 
 		if (propertyStatus) await this.syncHostStayCount(result.memberId);
+		this.aiSearchService.syncProperty(result);
 		return result;
 	}
 
@@ -424,6 +428,7 @@ export class PropertyService {
 		const result = await this.propertyModel.findOneAndDelete(search).exec();
 		if (!result) throw new InternalServerErrorException(Message.REMOVE_FAILED);
 
+		this.aiSearchService.removeProperty(propertyId);
 		return result;
 	}
 

@@ -12,6 +12,7 @@ import { MemberModule } from '../member/member.module';
 import { LikeModule } from '../like/like.module';
 
 import { NotificationModule } from '../notification/notification.module';
+import { AiSearchModule } from '../ai-search/ai-search.module';
 @Module({
 	imports: [
 		MongooseModule.forFeature([
@@ -24,6 +25,7 @@ import { NotificationModule } from '../notification/notification.module';
 		ViewModule,
 		MemberModule,
 		LikeModule,
+		AiSearchModule,
 	],
 	providers: [PropertyResolver, PropertyService],
 	exports: [PropertyService],
