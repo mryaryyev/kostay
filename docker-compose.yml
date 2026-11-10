@@ -2,12 +2,14 @@ services:
   kostay-api:
     container_name: kostay-api
     restart: always
-    image: node:22
+    build: .
+    image: kostay-server
     ports:
       - 4001:3007
+    env_file: .env
     volumes:
-      - ./:/usr/src/kostay
-    working_dir: /usr/src/kostay
+      # Uploaded images stay on the host, so they survive new deploys
+      - ./uploads:/app/uploads
     environment:
       REDIS_URL: redis://kostay-redis:6379
       TZ: Asia/Seoul
@@ -15,29 +17,25 @@ services:
       - kostay-redis
     networks:
       - monorepo-network
-
-    # FOR PRODUCTION
-    command: bash -c "npm install && npm run build && npm run start:prod"
 
   kostay-batch:
     container_name: kostay-batch
     restart: unless-stopped
-    image: node:22
+    # Same image as kostay-api (built once, reused from cache)
+    build: .
+    image: kostay-server
+    command: ["node", "dist/apps/kostay-batch/main"]
     ports:
       - 4002:3008
-    volumes:
-      - ./:/usr/src/kostay
-    working_dir: /usr/src/kostay
+    env_file: .env
     environment:
       REDIS_URL: redis://kostay-redis:6379
       TZ: Asia/Seoul
     depends_on:
+      - kostay-api
       - kostay-redis
     networks:
       - monorepo-network
-
-    # FOR PRODUCTION
-    command: bash -c "until curl -sf http://kostay-api:3007 > /dev/null; do echo 'waiting for kostay-api...'; sleep 10; done; npm install && npm run build:batch && npm run start:prod:batch"
 
   kostay-redis:
     container_name: kostay-redis
