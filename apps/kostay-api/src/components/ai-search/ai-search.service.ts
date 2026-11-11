@@ -6,8 +6,15 @@ import { firstValueFrom } from 'rxjs';
 import { Property } from '../../libs/dto/property/property';
 
 /** mongoose's ObjectId type declares no toString, so String(id) trips no-base-to-string. */
-function toHexId(id: ObjectId): string {
+export function toHexId(id: ObjectId): string {
 	return (id as unknown as { toHexString(): string }).toHexString();
+}
+
+/** Search must answer fast; after this the caller falls back to keyword search. */
+const SEARCH_TIMEOUT_MS = 2000;
+
+interface AiSearchResponse {
+	results: { property_id: string; score: number }[];
 }
 
 @Injectable()
@@ -22,6 +29,26 @@ export class AiSearchService {
 	) {
 		this.baseUrl = config.get<string>('AI_SEARCH_URL');
 		this.apiKey = config.get<string>('AI_SEARCH_API_KEY') ?? '';
+	}
+
+	/** Ranked property ids for a natural-language query, or null when the AI service is unavailable. */
+	public async search(query: string, limit: number): Promise<string[] | null> {
+		if (!this.baseUrl) return null;
+		try {
+			const { data } = await firstValueFrom(
+				this.http.post<AiSearchResponse>(
+					`${this.baseUrl}/v1/search`,
+					{ query, limit },
+					{ ...this.options(), timeout: SEARCH_TIMEOUT_MS },
+				),
+			);
+			return data.results.map((hit) => hit.property_id);
+		} catch (error) {
+			this.logger.warn(
+				`AI search failed, using keyword search: ${(error as Error).message}`,
+			);
+			return null;
+		}
 	}
 
 	/** Fire-and-forget: never throws and never blocks the caller. Non-ACTIVE stays are removed by the AI service. */
