@@ -7,6 +7,7 @@ import {
 	OrdinaryInquiry,
 	PropertiesInquiry,
 	PropertyInput,
+	AiSearchInquiry,
 } from '../../libs/dto/property/property.input';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UseGuards } from '@nestjs/common';
@@ -67,6 +68,16 @@ export class PropertyResolver {
 	): Promise<Properties> {
 		console.log('Query: getProperties');
 		return await this.propertyService.getProperties(memberId, input);
+	}
+
+	@UseGuards(WithoutGuard)
+	@Query(() => Properties)
+	public async aiSearchProperties(
+		@Args('input') input: AiSearchInquiry,
+		@AuthMember('_id') memberId: ObjectId,
+	): Promise<Properties> {
+		console.log('Query: aiSearchProperties');
+		return await this.propertyService.aiSearchProperties(memberId, input);
 	}
 
 	@UseGuards(AuthGuard)

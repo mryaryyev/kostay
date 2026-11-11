@@ -17,6 +17,7 @@ import {
 	OrdinaryInquiry,
 	PropertiesInquiry,
 	PropertyInput,
+	AiSearchInquiry,
 } from '../../libs/dto/property/property.input';
 import { MemberService } from '../member/member.service';
 import { StatisticModifier, T } from '../../libs/types/common';
@@ -38,7 +39,8 @@ import { NotificationService } from '../notification/notification.service';
 import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
 import { Member } from '../../libs/dto/member/member';
 import { MemberStatus, MemberType } from '../../libs/enums/member.enum';
-import { AiSearchService } from '../ai-search/ai-search.service';
+import { AiSearchService, toHexId } from '../ai-search/ai-search.service';
+
 @Injectable()
 export class PropertyService {
 	constructor(
@@ -56,7 +58,10 @@ export class PropertyService {
 		try {
 			// New stays wait for admin approval before they appear in search.
 			// memberProperties only counts public (ACTIVE) stays, so it changes on approval, not here.
-			const result = await this.propertyModel.create({ ...input, propertyStatus: PropertyStatus.PENDING });
+			const result = await this.propertyModel.create({
+				...input,
+				propertyStatus: PropertyStatus.PENDING,
+			});
 			await this.notifyAdmins(result);
 			return result;
 		} catch (err) {
@@ -97,9 +102,15 @@ export class PropertyService {
 			.findOne({ _id: propertyId, propertyStatus: { $ne: PropertyStatus.DELETE } })
 			.lean()
 			.exec();
-		const isOwner = Boolean(memberId) && String(targetProperty?.memberId) === String(memberId);
+		const isOwner =
+			Boolean(memberId) &&
+			!!targetProperty &&
+			toHexId(targetProperty.memberId) === toHexId(memberId);
 		const canSeePrivate = memberType === MemberType.ADMIN || isOwner;
-		if (!targetProperty || (targetProperty.propertyStatus !== PropertyStatus.ACTIVE && !canSeePrivate))
+		if (
+			!targetProperty ||
+			(targetProperty.propertyStatus !== PropertyStatus.ACTIVE && !canSeePrivate)
+		)
 			throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		if (memberId && targetProperty.propertyStatus === PropertyStatus.ACTIVE) {
@@ -142,9 +153,11 @@ export class PropertyService {
 		const { propertyStatus } = input;
 		// Only an admin can publish a stay: hosts never set PENDING, and a pending stay
 		// can be edited or deleted but not switched to ACTIVE / INACTIVE.
-		if (propertyStatus === PropertyStatus.PENDING) throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
+		if (propertyStatus === PropertyStatus.PENDING)
+			throw new BadRequestException(Message.NOT_ALLOWED_REQUEST);
 		const togglesVisibility =
-			propertyStatus === PropertyStatus.ACTIVE || propertyStatus === PropertyStatus.INACTIVE;
+			propertyStatus === PropertyStatus.ACTIVE ||
+			propertyStatus === PropertyStatus.INACTIVE;
 		const deletedAt =
 			propertyStatus === PropertyStatus.DELETE ? moment().toDate() : undefined;
 		const search: T = {
@@ -178,7 +191,9 @@ export class PropertyService {
 		const activeStays = await this.propertyModel
 			.countDocuments({ memberId, propertyStatus: PropertyStatus.ACTIVE })
 			.exec();
-		await this.memberModel.updateOne({ _id: memberId }, { memberProperties: activeStays }).exec();
+		await this.memberModel
+			.updateOne({ _id: memberId }, { memberProperties: activeStays })
+			.exec();
 	}
 
 	public async getProperties(
@@ -220,6 +235,40 @@ export class PropertyService {
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		return result[0];
+	}
+
+	/** Natural-language search through kostay-ai-search; falls back to keyword search when it is unavailable. */
+	public async aiSearchProperties(
+		memberId: ObjectId,
+		input: AiSearchInquiry,
+	): Promise<Properties> {
+		const limit = input.limit ?? 12;
+		const rankedIds = await this.aiSearchService.search(input.query, limit);
+		if (rankedIds === null) {
+			const text = input.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the query is used as a regex
+			return await this.getProperties(memberId, { page: 1, limit, search: { text } });
+		}
+		if (!rankedIds.length) return { list: [], metaCounter: [{ total: 0 }] };
+
+		const list: Property[] = await this.propertyModel
+			.aggregate([
+				{
+					$match: {
+						_id: { $in: rankedIds.map(shapeIntoMongoObjectId) },
+						propertyStatus: PropertyStatus.ACTIVE,
+					},
+				},
+				lookupMember,
+				{ $unwind: '$memberData' },
+				lookupAuthMemberLiked(memberId),
+			])
+			.exec();
+		// $in does not keep order: put the stays back in the AI ranking
+		const rank = new Map(rankedIds.map((id, index) => [id, index]));
+		list.sort(
+			(a, b) => (rank.get(toHexId(a._id)) ?? 0) - (rank.get(toHexId(b._id)) ?? 0),
+		);
+		return { list, metaCounter: [{ total: list.length }] };
 	}
 
 	/** PostgreSQL: stays with an active booking overlapping the dates (same rule as bookAndPay, check-out day stays free). */
@@ -385,24 +434,36 @@ export class PropertyService {
 		return result[0];
 	}
 
-	public async updatePropertyByAdmin(adminId: ObjectId, input: PropertyUpdate): Promise<Property> {
+	public async updatePropertyByAdmin(
+		adminId: ObjectId,
+		input: PropertyUpdate,
+	): Promise<Property> {
 		const { propertyStatus } = input;
 		const deletedAt =
 			propertyStatus === PropertyStatus.DELETE ? moment().toDate() : undefined;
 		const search: T = {
 			_id: input._id,
-			propertyStatus: { $in: [PropertyStatus.PENDING, PropertyStatus.ACTIVE, PropertyStatus.INACTIVE] },
+			propertyStatus: {
+				$in: [PropertyStatus.PENDING, PropertyStatus.ACTIVE, PropertyStatus.INACTIVE],
+			},
 		};
 
 		// new: false returns the stay as it was, so a decision on a pending stay can be detected.
 		const previous = await this.propertyModel
-			.findOneAndUpdate(search, { ...input, ...(deletedAt ? { deletedAt } : {}) }, { new: false })
+			.findOneAndUpdate(
+				search,
+				{ ...input, ...(deletedAt ? { deletedAt } : {}) },
+				{ new: false },
+			)
 			.exec();
 		if (!previous) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 		const result = (await this.propertyModel.findById(previous._id).exec()) as Property;
 
 		// Approve (PENDING → ACTIVE) or reject (PENDING → DELETE): tell the host.
-		if (previous.propertyStatus === PropertyStatus.PENDING && (propertyStatus === PropertyStatus.ACTIVE || deletedAt)) {
+		if (
+			previous.propertyStatus === PropertyStatus.PENDING &&
+			(propertyStatus === PropertyStatus.ACTIVE || deletedAt)
+		) {
 			await this.notificationService.createNotification({
 				notificationType: NotificationType.LISTING,
 				notificationGroup: NotificationGroup.PROPERTY,
