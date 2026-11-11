@@ -2,7 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ObjectId } from 'mongoose';
-import { firstValueFrom } from 'rxjs';
+import { Observable, firstValueFrom } from 'rxjs';
 import { Property } from '../../libs/dto/property/property';
 
 /** mongoose's ObjectId type declares no toString, so String(id) trips no-base-to-string. */
@@ -76,7 +76,7 @@ export class AiSearchService {
 		this.send(id, () => this.http.delete(this.url(id), this.options()));
 	}
 
-	private send(id: string, request: () => ReturnType<HttpService['put']>): void {
+	private send(id: string, request: () => Observable<unknown>): void {
 		if (!this.baseUrl) return;
 		firstValueFrom(request()).catch((error: Error) =>
 			this.logger.warn(`AI search sync failed for property ${id}: ${error.message}`),
