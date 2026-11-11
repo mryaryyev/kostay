@@ -103,7 +103,9 @@ export class PropertyService {
 			.lean()
 			.exec();
 		const isOwner =
-			Boolean(memberId) && String(targetProperty?.memberId) === String(memberId);
+			Boolean(memberId) &&
+			!!targetProperty &&
+			toHexId(targetProperty.memberId) === toHexId(memberId);
 		const canSeePrivate = memberType === MemberType.ADMIN || isOwner;
 		if (
 			!targetProperty ||
