@@ -6,6 +6,7 @@ import {
 	IsOptional,
 	Length,
 	Matches,
+	Max,
 	Min,
 } from 'class-validator';
 import {
@@ -252,4 +253,19 @@ export class OrdinaryInquiry {
 	@Min(1)
 	@Field(() => Int)
 	limit: number;
+}
+
+@InputType()
+export class AiSearchInquiry {
+	@IsNotEmpty()
+	@Length(1, 300)
+	@Field(() => String)
+	query: string;
+
+	@IsOptional()
+	@IsInt()
+	@Min(1)
+	@Max(50)
+	@Field(() => Int, { nullable: true })
+	limit?: number;
 }
