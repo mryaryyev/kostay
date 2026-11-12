@@ -243,10 +243,19 @@ export class PropertyService {
 		input: AiSearchInquiry,
 	): Promise<Properties> {
 		const limit = input.limit ?? 12;
-		const rankedIds = await this.aiSearchService.search(input.query, limit);
-		if (rankedIds === null) {
+		const result = await this.aiSearchService.search(input.query, limit);
+		if (result === null) {
 			const text = input.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // the query is used as a regex
 			return await this.getProperties(memberId, { page: 1, limit, search: { text } });
+		}
+		// dates the guest asked for: drop stays that are already booked (bookings live here, not in the AI service)
+		const { checkIn, checkOut } = result.filters ?? {};
+		let rankedIds = result.ids;
+		if (checkIn && checkOut && checkOut > checkIn) {
+			const unavailable = new Set(
+				await this.getUnavailablePropertyIds(checkIn, checkOut),
+			);
+			rankedIds = rankedIds.filter((id) => !unavailable.has(id));
 		}
 		if (!rankedIds.length) return { list: [], metaCounter: [{ total: 0 }] };
 

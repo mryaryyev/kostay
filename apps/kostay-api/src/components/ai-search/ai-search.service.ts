@@ -10,10 +10,22 @@ export function toHexId(id: ObjectId): string {
 	return (id as unknown as { toHexString(): string }).toHexString();
 }
 
-/** Search must answer fast; after this the caller falls back to keyword search. */
-const SEARCH_TIMEOUT_MS = 2000;
+/** The AI service may call an LLM (up to 3 s); after this the caller falls back to keyword search. */
+const SEARCH_TIMEOUT_MS = 5000;
+
+/** Filters the AI service extracted from the query (same names as PISearch). */
+export interface AiSearchFilters {
+	checkIn?: string;
+	checkOut?: string;
+}
+
+export interface AiSearchResult {
+	ids: string[];
+	filters: AiSearchFilters | null;
+}
 
 interface AiSearchResponse {
+	filters: AiSearchFilters | null;
 	results: { property_id: string; score: number }[];
 }
 
@@ -31,8 +43,8 @@ export class AiSearchService {
 		this.apiKey = config.get<string>('AI_SEARCH_API_KEY') ?? '';
 	}
 
-	/** Ranked property ids for a natural-language query, or null when the AI service is unavailable. */
-	public async search(query: string, limit: number): Promise<string[] | null> {
+	/** Ranked property ids (and extracted filters) for a query, or null when the AI service is unavailable. */
+	public async search(query: string, limit: number): Promise<AiSearchResult | null> {
 		if (!this.baseUrl) return null;
 		try {
 			const { data } = await firstValueFrom(
@@ -42,7 +54,7 @@ export class AiSearchService {
 					{ ...this.options(), timeout: SEARCH_TIMEOUT_MS },
 				),
 			);
-			return data.results.map((hit) => hit.property_id);
+			return { ids: data.results.map((hit) => hit.property_id), filters: data.filters };
 		} catch (error) {
 			this.logger.warn(
 				`AI search failed, using keyword search: ${(error as Error).message}`,
