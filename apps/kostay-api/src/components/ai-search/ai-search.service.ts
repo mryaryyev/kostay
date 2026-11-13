@@ -10,8 +10,11 @@ export function toHexId(id: ObjectId): string {
 	return (id as unknown as { toHexString(): string }).toHexString();
 }
 
-/** The AI service may call an LLM (up to 3 s); after this the caller falls back to keyword search. */
-const SEARCH_TIMEOUT_MS = 5000;
+/**
+ * After this the caller falls back to keyword search. A warm search takes 1-2 s; after hours
+ * without traffic the first one took 7.2 s on the production server, so leave room for it.
+ */
+const SEARCH_TIMEOUT_MS = 8000;
 
 /** Filters the AI service extracted from the query (same names as PISearch). */
 export interface AiSearchFilters {
