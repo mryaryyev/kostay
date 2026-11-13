@@ -257,7 +257,12 @@ export class PropertyService {
 			);
 			rankedIds = rankedIds.filter((id) => !unavailable.has(id));
 		}
-		if (!rankedIds.length) return { list: [], metaCounter: [{ total: 0 }] };
+		const aiRelaxedFields = result.relaxedFields;
+		if (!rankedIds.length) {
+			// stays matched the request, but every one is booked for those dates: say so, not "no match"
+			const aiAllBooked = result.ids.length > 0;
+			return { list: [], metaCounter: [{ total: 0 }], aiRelaxedFields, aiAllBooked };
+		}
 
 		const list: Property[] = await this.propertyModel
 			.aggregate([
@@ -277,7 +282,7 @@ export class PropertyService {
 		list.sort(
 			(a, b) => (rank.get(toHexId(a._id)) ?? 0) - (rank.get(toHexId(b._id)) ?? 0),
 		);
-		return { list, metaCounter: [{ total: list.length }] };
+		return { list, metaCounter: [{ total: list.length }], aiRelaxedFields };
 	}
 
 	/** PostgreSQL: stays with an active booking overlapping the dates (same rule as bookAndPay, check-out day stays free). */
