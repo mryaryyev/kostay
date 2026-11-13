@@ -92,4 +92,12 @@ export class Properties {
 
 	@Field(() => [TotalCounter], { nullable: true })
 	metaCounter: TotalCounter[];
+
+	/** AI search only: filters dropped because no stay matched all of them (e.g. ["typeList"]). */
+	@Field(() => [String], { nullable: true })
+	aiRelaxedFields?: string[];
+
+	/** AI search only: stays matched, but all of them are booked for the requested dates. */
+	@Field(() => Boolean, { nullable: true })
+	aiAllBooked?: boolean;
 }
