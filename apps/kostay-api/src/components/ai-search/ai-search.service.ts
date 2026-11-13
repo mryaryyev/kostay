@@ -25,11 +25,14 @@ export interface AiSearchFilters {
 export interface AiSearchResult {
 	ids: string[];
 	filters: AiSearchFilters | null;
+	/** Filters dropped because nothing matched all of them, in the order they were dropped. */
+	relaxedFields: string[];
 }
 
 interface AiSearchResponse {
 	filters: AiSearchFilters | null;
 	results: { property_id: string; score: number }[];
+	relaxed_fields?: string[];
 }
 
 @Injectable()
@@ -57,7 +60,11 @@ export class AiSearchService {
 					{ ...this.options(), timeout: SEARCH_TIMEOUT_MS },
 				),
 			);
-			return { ids: data.results.map((hit) => hit.property_id), filters: data.filters };
+			return {
+				ids: data.results.map((hit) => hit.property_id),
+				filters: data.filters,
+				relaxedFields: data.relaxed_fields ?? [],
+			};
 		} catch (error) {
 			this.logger.warn(
 				`AI search failed, using keyword search: ${(error as Error).message}`,
