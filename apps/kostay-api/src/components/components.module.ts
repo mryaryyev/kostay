@@ -12,6 +12,7 @@ import { NotificationModule } from './notification/notification.module';
 import { NoticeModule } from './notice/notice.module';
 import { InquiryModule } from './inquiry/inquiry.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
 	imports: [
@@ -28,6 +29,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 		NoticeModule,
 		InquiryModule,
 		DashboardModule,
+		AssistantModule,
 	],
 })
 export class ComponentsModule {}
