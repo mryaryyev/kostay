@@ -94,12 +94,13 @@ export class AssistantService {
 	 * Passes kostay-ai-search's events on as they arrive. "start" and "delta" go through
 	 * untouched; "done" gets stay cards added. Always ends with exactly one "done" event.
 	 * `signal` aborts the upstream call when the visitor leaves, so nobody pays for an
-	 * answer no one reads.
+	 * answer no one reads. `history`: the visitor's earlier questions, for follow-ups.
 	 */
 	public async stream(
 		question: string,
 		out: EventSink,
 		signal: AbortSignal,
+		history: string[] = [],
 	): Promise<void> {
 		if (!this.baseUrl) {
 			out.write(formatSse('done', UNAVAILABLE));
@@ -109,7 +110,7 @@ export class AssistantService {
 		try {
 			const response = await this.http.axiosRef.post<Readable>(
 				`${this.baseUrl}/v1/assistant/stream`,
-				{ question },
+				{ question, history },
 				{
 					headers: { 'X-Internal-Api-Key': this.apiKey },
 					responseType: 'stream',

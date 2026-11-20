@@ -54,6 +54,30 @@ describe('AssistantService.stream', () => {
 			formatSse('done', done),
 		]);
 		expect((post.mock.calls[0] as unknown[])[0]).toBe('http://ai/v1/assistant/stream');
+		// a first question: no earlier questions
+		expect((post.mock.calls[0] as unknown[])[1]).toEqual({
+			question: 'Refund?',
+			history: [],
+		});
+	});
+
+	it('sends the earlier questions of the conversation with a follow-up', async () => {
+		const done = {
+			status: 'stays',
+			answer: '',
+			citations: [],
+			intent: 'stay',
+			stays: [],
+		};
+		const post = upstream(formatSse('done', done));
+		const { service } = makeService({ baseUrl: 'http://ai', post });
+		await service.stream('in Incheon', sink(), new AbortController().signal, [
+			'cheapest stays in Seoul',
+		]);
+		expect((post.mock.calls[0] as unknown[])[1]).toEqual({
+			question: 'in Incheon',
+			history: ['cheapest stays in Seoul'],
+		});
 	});
 
 	it('turns stay ids into cards, keeping order and dropping stays that are gone', async () => {

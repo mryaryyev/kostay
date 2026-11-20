@@ -30,6 +30,9 @@ export class AssistantController {
 	): Promise<void> {
 		const question = input.question.trim();
 		if (!question) throw new BadRequestException('question is empty');
+		const history = (input.history ?? [])
+			.map((earlier) => earlier.trim())
+			.filter(Boolean);
 
 		res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
 		// no-transform / X-Accel-Buffering: nginx must pass each event on at once
@@ -45,7 +48,7 @@ export class AssistantController {
 
 		const aborted = new AbortController();
 		res.on('close', () => aborted.abort()); // the visitor closed the tab or the box
-		await this.assistantService.stream(question, res, aborted.signal);
+		await this.assistantService.stream(question, res, aborted.signal, history);
 		res.end();
 	}
 }
