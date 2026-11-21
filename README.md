@@ -1,98 +1,156 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Kostay API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend of [Kostay](https://kostay.kr), a booking platform for stays in South Korea: apartments,
+villas, houses and hanoks in eight cities. Guests search by city and dates and book at once; hosts
+list their stays and follow reservations and earnings; admins moderate stays, members, bookings and
+the help center.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+A NestJS monorepo with two apps that share one code base and one Docker image:
 
-## Description
+- **kostay-api**: a GraphQL API (65 queries and mutations), one REST endpoint that streams the
+  assistant's answers, and a WebSocket chat.
+- **kostay-batch**: scheduled jobs (rankings, finishing stays after check-out).
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Related repositories: [kostay-next](https://github.com/mryaryyev/kostay-next) (the Next.js site)
+and [kostay-ai-search](https://github.com/mryaryyev/kostay-ai-search) (natural-language search and
+the assistant).
 
-## Project setup
+## Architecture
 
-```bash
-$ npm install
+```mermaid
+flowchart LR
+    W[Next.js site] -->|GraphQL| A[kostay-api]
+    W -->|SSE: assistant| A
+    W <-->|WebSocket: chat| A
+    A --> M[(MongoDB<br/>members, stays, community)]
+    A --> P[(PostgreSQL<br/>bookings, payments)]
+    A --> R[(Redis<br/>chat history, limits, counters)]
+    A -->|HTTP, internal key| S[kostay-ai-search]
+    B[kostay-batch<br/>cron jobs] --> M
+    B --> P
 ```
 
-## Compile and run the project
+## Three stores, each for what it is good at
+
+| Store | Holds | Why |
+|---|---|---|
+| MongoDB (Mongoose) | members, stays, community articles, comments, likes, views, follows, notifications, notices and FAQ, inquiries | Flexible documents and counters; likes, views and comments are one collection each that serves members, stays and articles (group + reference id) |
+| PostgreSQL (TypeORM, migrations) | bookings, payments | Money and dates need transactions and constraints |
+| Redis | chat history, the assistant's rate limits, Smart Search counters | Short-lived data; the API keeps working when Redis is down |
+
+Bookings point to MongoDB ids stored as `varchar(24)`; there are no cross-database joins. Booking
+rows are read from PostgreSQL, then the stay and guest details are attached with one MongoDB query each.
+
+## Bookings
+
+The part that must not go wrong (`components/booking`, `database/postgres`):
+
+- **One transaction.** Instant Book saves a confirmed booking and its payment together, or nothing
+  at all, so an unpaid booking never blocks dates.
+- **The price is calculated on the server**: nights × the stay's price per night. An amount sent by
+  the client is never used.
+- **No double booking, guaranteed by the database.** The service checks availability first, but two
+  requests can arrive at the same moment. An exclusion constraint
+  (`EXCLUDE USING gist (property_id WITH =, daterange(check_in, check_out) WITH &&)` over active
+  bookings) makes the second one fail; the API answers that the dates were just taken.
+- **Check-out day is free for the next guest**: the date range is half-open.
+- **Cancel and refund in one transaction**, by the guest or by an admin; the other side gets a
+  notification after the commit.
+- Search results leave out stays that are booked for the requested dates, and a public query returns
+  a stay's booked ranges without any guest data.
+
+## Access control
+
+- Passwords are hashed with bcrypt; a login returns a JWT.
+- Three guards: `AuthGuard` (signed in), `RolesGuard` with `@Roles(...)` (host or admin only) and
+  `WithoutGuard` (public, but knows the member when a token is sent).
+- Every input is a DTO validated with class-validator through a global `ValidationPipe`.
+
+## AI features
+
+The AI runs in a separate service; this API is the only thing that talks to it.
+
+- **Smart Search**: the query is sent to kostay-ai-search, which returns ranked stay ids and the
+  filters it understood. If the service is down or slower than 8 seconds, the API falls back to
+  keyword search, so search never breaks. Requests and fallbacks are counted per day in Redis for
+  the admin page.
+- **Index sync**: when a stay is created, changed or removed, the change is sent to the AI service
+  without waiting for the answer. A failure there cannot slow down or break the host's request.
+- **Assistant** (`POST /assistant/stream`): REST instead of GraphQL, because the answer streams as
+  Server-Sent Events. The API passes the stream through, adds stay cards from MongoDB to the final
+  event, and stops the upstream request when the visitor closes the page. Limits in Redis: 10
+  questions per minute per IP and 1,000 per day in total.
+
+## Scheduled jobs
+
+Times are Asia/Seoul.
+
+| When | Job |
+|---|---|
+| 01:00:00 | Reset the ranks of active stays and hosts |
+| 01:00:20 | Rank stays: likes × 2 + views |
+| 01:00:40 | Rank hosts: stays × 5 + articles × 3 + likes × 2 + views |
+| 11:05 | Mark confirmed bookings as completed once their check-out day has come (check-out is 11:00) |
+
+## Also in the API
+
+- **Community**: four boards (free, recommend, news, humor) with comments, likes and view counts.
+- **Follows and notifications** for likes, comments, follows, bookings and inquiries.
+- **Help center**: notices, FAQ in groups, and 1:1 inquiries that admins answer.
+- **Hosts**: their stays, reservations and earnings (revenue from PostgreSQL payments).
+- **Admin**: dashboard totals, members, stays, bookings with refunds, community and help center.
+- **Live chat** over WebSocket; the last 50 messages are kept in a Redis list, with a copy in memory
+  for when Redis is down.
+- **Image upload**: photos are rotated as taken, resized and saved as WebP.
+
+## Run locally
+
+You need Node.js 22, a MongoDB database, a PostgreSQL database and Redis.
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
+cp .env.example .env          # fill in the connection strings and the token secret
+npm run migration:run         # creates the bookings and payments tables
+npm run start:dev             # API, GraphQL playground at http://localhost:3007/graphql
+npm run start:dev:batch       # batch jobs, in a second terminal
 ```
 
-## Run tests
+`AI_SEARCH_URL` is optional: without it Smart Search uses keyword search and the assistant is off.
+
+## Tests
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm test
 ```
 
-## Deployment
+16 unit tests cover the assistant proxy: the rate limiter, the Server-Sent Events parser, input
+validation and the service. CI runs lint, both builds and the tests on every pull request.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Deploy
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+One multi-stage Docker image runs both apps (the batch container overrides the command). Docker
+Compose starts the API, the batch app and Redis; uploaded images live in a folder on the host, so
+they survive new deploys. On the server:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+./deploy.sh        # pull main, build the new image, swap the containers
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Project structure
 
-## Resources
+```text
+apps/kostay-api/src/
+  components/      one module per feature: resolver, service (auth, member, property, booking,
+                   board-article, comment, like, view, follow, notification, notice, inquiry,
+                   dashboard, ai-search, assistant)
+  database/        MongoDB, PostgreSQL (entities, migrations) and Redis modules
+  libs/            DTOs, enums, config, image processing, logging interceptor
+  schemas/         Mongoose schemas
+  socket/          WebSocket chat gateway
+apps/kostay-batch/src/   cron jobs
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+## Stack
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+TypeScript, NestJS 10, GraphQL (Apollo Server), Mongoose, TypeORM, PostgreSQL, MongoDB, Redis
+(ioredis), WebSocket (ws), JWT, bcrypt, class-validator, sharp, Jest, Docker.

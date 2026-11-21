@@ -73,8 +73,7 @@ export class SocketGateway implements OnGatewayInit {
 			const parseUrl = url.parse(req.url, true);
 			const { token } = parseUrl.query;
 			return await this.authService.verifyToken(token as string);
-		} catch (err) {
-			//this.logger.warn(`Auth failed: ${(err as Error).message}`);
+		} catch {
 			return null;
 		}
 	}

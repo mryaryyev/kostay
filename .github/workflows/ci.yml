@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # the "lint" script fixes files in place; CI only reports
+      - run: npx eslint "{src,apps,libs,test}/**/*.ts"
+      - run: npm run build
+      - run: npm run build:batch
+      - run: npm test

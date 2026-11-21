@@ -1,6 +1,6 @@
 import { Controller, Get, Logger } from '@nestjs/common';
 import { BatchService } from './batch.service';
-import { Cron, Interval, Timeout } from '@nestjs/schedule';
+import { Cron, Timeout } from '@nestjs/schedule';
 import {
 	BATCH_COMPLETE_BOOKINGS,
 	BATCH_ROLLBACK,
@@ -64,13 +64,6 @@ export class BatchController {
 			this.logger.error(err);
 		}
 	}
-
-	/*
-	@Interval(1000)
-	handleInterval() {
-		this.logger.debug("INTERVAL TEST")
-	}
-	*/
 
 	@Get()
 	getHello(): string {
