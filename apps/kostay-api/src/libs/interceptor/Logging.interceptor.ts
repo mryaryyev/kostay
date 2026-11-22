@@ -29,6 +29,7 @@ export class LoggingInterceptor implements NestInterceptor {
 	}
 
 	private stringify(context: ExecutionContext): string {
-		return JSON.stringify(context).slice(0, 75);
+		// handlers that write the response themselves (@Res) return undefined
+		return (JSON.stringify(context) ?? '').slice(0, 75);
 	}
 }
