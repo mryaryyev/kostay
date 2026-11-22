@@ -9,22 +9,6 @@ export const PER_DAY = 1000;
 
 export type LimitResult = { allowed: true } | { allowed: false; reason: 'ip' | 'day' };
 
-/**
- * The visitor's address. Behind nginx the socket address is the proxy's, so the first
- * X-Forwarded-For entry is used. A client can fake that header; the daily cap still holds.
- */
-export function clientIp(
-	headers: Record<string, string | string[] | undefined>,
-	socketIp?: string,
-): string {
-	const forwarded = headers['x-forwarded-for'];
-	const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)
-		?.split(',')[0]
-		?.trim();
-	const real = headers['x-real-ip'];
-	return first || (Array.isArray(real) ? real[0] : real) || socketIp || 'unknown';
-}
-
 export function decide(ipCount: number, dayCount: number): LimitResult {
 	if (dayCount > PER_DAY) return { allowed: false, reason: 'day' };
 	if (ipCount > PER_IP_PER_MINUTE) return { allowed: false, reason: 'ip' };

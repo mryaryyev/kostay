@@ -1,4 +1,4 @@
-import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { MemberService } from './member.service';
 import {
 	HostsInquiry,
@@ -7,7 +7,12 @@ import {
 	MembersInquiry,
 } from '../../libs/dto/member/member.input';
 import { Member, Members } from '../../libs/dto/member/member';
-import { UseGuards } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
+import { Redis } from 'ioredis';
+import { REDIS_CLIENT } from '../../database/redis/redis.module';
+import { clientIp } from '../../libs/client-ip';
+import { allowLogin } from './login-limit';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { AuthMember } from '../auth/decorators/authMember.decorator';
 import { ObjectId, Types } from 'mongoose';
@@ -23,7 +28,10 @@ import { Message } from '../../libs/enums/common.enum';
 
 @Resolver()
 export class MemberResolver {
-	constructor(private readonly memberService: MemberService) {}
+	constructor(
+		private readonly memberService: MemberService,
+		@Inject(REDIS_CLIENT) private readonly redis: Redis,
+	) {}
 
 	@Mutation(() => Member)
 	public async signup(@Args('input') input: MemberInput): Promise<Member> {
@@ -32,8 +40,13 @@ export class MemberResolver {
 	}
 
 	@Mutation(() => Member)
-	public async login(@Args('input') input: LoginInput): Promise<Member> {
+	public async login(
+		@Args('input') input: LoginInput,
+		@Context('req') req: Request,
+	): Promise<Member> {
 		console.log('Mutation: login');
+		if (!(await allowLogin(this.redis, clientIp(req.headers, req.ip))))
+			throw new HttpException(Message.TOO_MANY_LOGINS, HttpStatus.TOO_MANY_REQUESTS);
 		return await this.memberService.login(input);
 	}
 

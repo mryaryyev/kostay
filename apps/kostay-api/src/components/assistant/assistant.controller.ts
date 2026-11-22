@@ -10,7 +10,7 @@ import {
 import type { Request, Response } from 'express';
 import { AskInput } from '../../libs/dto/assistant/assistant.input';
 import { AssistantService, LIMITED } from './assistant.service';
-import { clientIp } from './rate-limit';
+import { clientIp } from '../../libs/client-ip';
 import { formatSse } from './sse';
 
 /**

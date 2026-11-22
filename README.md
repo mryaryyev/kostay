@@ -61,7 +61,9 @@ The part that must not go wrong (`components/booking`, `database/postgres`):
 
 ## Access control
 
-- Passwords are hashed with bcrypt; a login returns a JWT.
+- Passwords are hashed with bcrypt; a login returns a JWT. Ten login attempts per five minutes per IP.
+- The server decides role and status: a signup creates a guest or a host, a profile update accepts
+  profile fields only, and every request reads the member's current role and status from MongoDB.
 - Three guards: `AuthGuard` (signed in), `RolesGuard` with `@Roles(...)` (host or admin only) and
   `WithoutGuard` (public, but knows the member when a token is sent).
 - Every input is a DTO validated with class-validator through a global `ValidationPipe`.
@@ -99,8 +101,9 @@ Times are Asia/Seoul.
 - **Help center**: notices, FAQ in groups, and 1:1 inquiries that admins answer.
 - **Hosts**: their stays, reservations and earnings (revenue from PostgreSQL payments).
 - **Admin**: dashboard totals, members, stays, bookings with refunds, community and help center.
-- **Live chat** over WebSocket; the last 50 messages are kept in a Redis list, with a copy in memory
-  for when Redis is down.
+- **Live chat** over WebSocket: everyone reads, members write, and a message shows only nickname
+  and photo. The last 50 messages are kept in a Redis list, with a copy in memory for when Redis
+  is down.
 - **Image upload**: photos are rotated as taken, resized and saved as WebP.
 
 ## Run locally
@@ -123,8 +126,9 @@ npm run start:dev:batch       # batch jobs, in a second terminal
 npm test
 ```
 
-16 unit tests cover the assistant proxy: the rate limiter, the Server-Sent Events parser, input
-validation and the service. CI runs lint, both builds and the tests on every pull request.
+19 unit tests cover the member role rules and the assistant proxy: the rate limiter, the
+Server-Sent Events parser, input validation and the service. CI runs lint, both builds and the tests
+on every pull request.
 
 ## Deploy
 

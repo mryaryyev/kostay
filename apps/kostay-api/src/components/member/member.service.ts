@@ -28,6 +28,17 @@ import { lookupAuthMemberLiked } from '../../libs/config';
 
 import { NotificationService } from '../notification/notification.service';
 import { NotificationGroup, NotificationType } from '../../libs/enums/notification.enum';
+
+/** What members may change on their own profile. */
+const PROFILE_FIELDS = [
+	'memberNick',
+	'memberPhone',
+	'memberFullName',
+	'memberImage',
+	'memberAddress',
+	'memberDesc',
+] as const;
+
 @Injectable()
 export class MemberService {
 	constructor(
@@ -40,10 +51,16 @@ export class MemberService {
 	) {}
 
 	public async signup(input: MemberInput): Promise<Member> {
-		// TODO: Hash password
-		input.memberPassword = await this.authService.hashPassword(input.memberPassword);
+		const { memberNick, memberPassword, memberPhone, memberType, memberAuthType } = input;
+		const newMember = {
+			memberNick,
+			memberPhone,
+			memberAuthType,
+			memberType: memberType === MemberType.HOST ? MemberType.HOST : MemberType.USER,
+			memberPassword: await this.authService.hashPassword(memberPassword),
+		};
 		try {
-			const result = await this.memberModel.create(input);
+			const result = await this.memberModel.create(newMember);
 			// TODO: Authentication via TOKEN
 			result.accessToken = await this.authService.createToken(result);
 			return result;
@@ -80,8 +97,15 @@ export class MemberService {
 	}
 
 	public async updateMember(memberId: ObjectId, input: MemberUpdate): Promise<Member> {
+		// only profile fields: role and status are changed by an admin (updateMembersByAdmin)
+		const update: T = {};
+		for (const key of PROFILE_FIELDS)
+			if (input[key] !== undefined) update[key] = input[key];
+		if (input.memberPassword)
+			update.memberPassword = await this.authService.hashPassword(input.memberPassword);
+
 		const result = await this.memberModel
-			.findOneAndUpdate({ _id: memberId, memberStatus: MemberStatus.ACTIVE }, input, {
+			.findOneAndUpdate({ _id: memberId, memberStatus: MemberStatus.ACTIVE }, update, {
 				new: true,
 			})
 			.exec();
@@ -248,8 +272,12 @@ export class MemberService {
 	}
 
 	public async updateMembersByAdmin(input: MemberUpdate): Promise<Member> {
+		const update: T = { ...input };
+		if (input.memberPassword)
+			update.memberPassword = await this.authService.hashPassword(input.memberPassword);
+
 		const result = await this.memberModel
-			.findOneAndUpdate({ _id: input._id }, input, { new: true })
+			.findOneAndUpdate({ _id: input._id }, update, { new: true })
 			.exec();
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 		return result;

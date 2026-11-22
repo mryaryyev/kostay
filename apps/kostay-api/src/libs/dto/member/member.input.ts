@@ -20,7 +20,9 @@ export class MemberInput {
 	@Field(() => String)
 	memberPhone: string;
 
+	// a visitor registers as a guest or a host, never as an admin
 	@IsOptional()
+	@IsIn([MemberType.USER, MemberType.HOST])
 	@Field(() => MemberType, { nullable: true })
 	memberType?: MemberType;
 

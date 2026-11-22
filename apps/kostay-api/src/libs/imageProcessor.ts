@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import { writeFile } from 'fs/promises';
@@ -6,6 +7,8 @@ import { Readable } from 'stream';
 // Longest side in pixels per upload target; member photos are small avatars
 const MAX_SIZE: Record<string, number> = { member: 600 };
 const DEFAULT_MAX_SIZE = 1600;
+// the target becomes a folder name, so only the known ones are accepted
+const TARGETS = ['member', 'property', 'article'];
 
 const streamToBuffer = async (stream: Readable): Promise<Buffer> => {
 	const chunks: Buffer[] = [];
@@ -21,6 +24,7 @@ export const saveUploadedImage = async (
 	stream: Readable,
 	target: string,
 ): Promise<string> => {
+	if (!TARGETS.includes(target)) throw new BadRequestException('Unknown upload target');
 	const input = await streamToBuffer(stream);
 	const maxSize = MAX_SIZE[target] ?? DEFAULT_MAX_SIZE;
 

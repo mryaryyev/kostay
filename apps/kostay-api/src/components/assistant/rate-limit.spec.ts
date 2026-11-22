@@ -3,17 +3,16 @@ import {
 	AssistantRateLimiter,
 	PER_DAY,
 	PER_IP_PER_MINUTE,
-	clientIp,
 	decide,
 } from './rate-limit';
+import { clientIp } from '../../libs/client-ip';
 
 describe('clientIp', () => {
-	it('takes the first X-Forwarded-For address behind a proxy', () => {
-		expect(clientIp({ 'x-forwarded-for': '1.2.3.4, 10.0.0.1' }, '10.0.0.1')).toBe(
-			'1.2.3.4',
-		);
+	it('ignores X-Forwarded-For, which the visitor controls', () => {
+		const headers = { 'x-forwarded-for': '1.2.3.4, 5.6.7.8', 'x-real-ip': '5.6.7.8' };
+		expect(clientIp(headers, '10.0.0.1')).toBe('5.6.7.8');
 	});
-	it('falls back to X-Real-IP, then the socket address', () => {
+	it('uses X-Real-IP, then the socket address', () => {
 		expect(clientIp({ 'x-real-ip': '5.6.7.8' }, '10.0.0.1')).toBe('5.6.7.8');
 		expect(clientIp({}, '10.0.0.1')).toBe('10.0.0.1');
 		expect(clientIp({})).toBe('unknown');

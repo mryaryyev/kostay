@@ -14,6 +14,7 @@ export enum Message {
 	BLOCKED_USER = 'You have been blocked!',
 	WRONG_PASSWORD = 'Wrong password, try again!',
 	NOT_AUTHENTICATED = 'You are not authenticated, please login first!',
+	TOO_MANY_LOGINS = 'Too many login attempts, please try again in a few minutes!',
 	TOKEN_NOT_EXIST = 'Bearer Token is not provided!',
 	TOKEN_INVALID = 'Your session has expired, please login again!',
 	ONLY_SPECIFIC_ROLES_ALLOWED = 'Allowed only for members with specific roles!',
