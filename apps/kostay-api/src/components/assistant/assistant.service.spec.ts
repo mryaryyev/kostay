@@ -1,22 +1,39 @@
 import { Readable } from 'stream';
-import { AssistantService, UNAVAILABLE } from './assistant.service';
+import { Types } from 'mongoose';
+import { AssistantDone, AssistantService, UNAVAILABLE } from './assistant.service';
 import { formatSse } from './sse';
 
 const STAY_ID = '6acc9ac09b7e8ff5e7aa0355';
 const GONE_ID = '6acc9ac09b7e8ff5e7aa0356';
 
-function makeService(opts: { baseUrl?: string; post?: jest.Mock; found?: object[] }) {
+function makeService(opts: {
+	baseUrl?: string;
+	post?: jest.Mock;
+	found?: object[];
+	counts?: object[];
+	hosts?: object[];
+}) {
 	const config = { get: (key: string) => (key === 'AI_SEARCH_URL' ? opts.baseUrl : 'k') };
 	const http = { axiosRef: { post: opts.post ?? jest.fn() } };
 	const query = { select: () => query, lean: () => query, exec: () => opts.found ?? [] };
-	const model = { find: jest.fn(() => query) };
+	const model = {
+		find: jest.fn(() => query),
+		aggregate: jest.fn(() => ({ exec: () => opts.counts ?? [] })),
+	};
+	const hostQuery = {
+		select: () => hostQuery,
+		lean: () => hostQuery,
+		exec: () => opts.hosts ?? [],
+	};
+	const members = { find: jest.fn(() => hostQuery) };
 	const service = new AssistantService(
 		http as never,
 		config as never,
 		{ status: 'ready' } as never,
 		model as never,
+		members as never,
 	);
-	return { service, model };
+	return { service, model, members };
 }
 
 /** Collects what the service writes, like the Express response would. */
@@ -156,5 +173,59 @@ describe('AssistantService.stream', () => {
 		const out = sink();
 		await service.stream('q', out, new AbortController().signal);
 		expect(out.chunks.at(-1)).toBe(formatSse('done', UNAVAILABLE));
+	});
+});
+
+describe('AssistantService.withHostCards', () => {
+	const id = (hex: string) => new Types.ObjectId(hex);
+	const A = '6acc9ac09b7e8ff5e7aa0001';
+	const B = '6acc9ac09b7e8ff5e7aa0002';
+	const C = '6acc9ac09b7e8ff5e7aa0003';
+	const D = '6acc9ac09b7e8ff5e7aa0004';
+	const done: AssistantDone = {
+		status: 'answered',
+		answer: 'x',
+		citations: [],
+		intent: 'travel',
+		stays: [],
+	};
+
+	it('turns a city into the hosts with the most active stays there, at most three', async () => {
+		const { service, model, members } = makeService({
+			counts: [
+				{ _id: id(B), stays: 4 },
+				{ _id: id(A), stays: 2 },
+				{ _id: id(C), stays: 1 },
+				{ _id: id(D), stays: 1 },
+			],
+			// C is not an active host any more; the members come back in another order
+			hosts: [
+				{ _id: id(D), memberNick: 'dana', memberImage: null },
+				{ _id: id(A), memberNick: 'ana', memberImage: 'uploads/member/a.webp' },
+				{ _id: id(B), memberNick: 'bo' },
+			],
+		});
+		const result = await service.withHostCards({ ...done, hosts_city: 'BUSAN' });
+		expect(result.hostCards).toEqual([
+			{ _id: B, memberNick: 'bo', memberImage: null, stays: 4 },
+			{ _id: A, memberNick: 'ana', memberImage: 'uploads/member/a.webp', stays: 2 },
+			{ _id: D, memberNick: 'dana', memberImage: null, stays: 1 },
+		]);
+		const match = (model.aggregate.mock.calls[0] as unknown[][])[0][0];
+		expect(match).toEqual({
+			$match: { propertyStatus: 'ACTIVE', propertyLocation: 'BUSAN' },
+		});
+		expect((members.find.mock.calls[0] as unknown[])[0]).toMatchObject({
+			memberType: 'HOST',
+			memberStatus: 'ACTIVE',
+		});
+	});
+
+	it('does nothing without a known city', async () => {
+		const { service, model } = makeService({});
+		expect(await service.withHostCards(done)).toBe(done);
+		const paris = { ...done, hosts_city: 'PARIS' };
+		expect(await service.withHostCards(paris)).toBe(paris);
+		expect(model.aggregate).not.toHaveBeenCalled();
 	});
 });

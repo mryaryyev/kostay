@@ -79,8 +79,8 @@ The AI runs in a separate service; this API is the only thing that talks to it.
 - **Index sync**: when a stay is created, changed or removed, the change is sent to the AI service
   without waiting for the answer. A failure there cannot slow down or break the host's request.
 - **Assistant** (`POST /assistant/stream`): REST instead of GraphQL, because the answer streams as
-  Server-Sent Events. The API passes the stream through, adds stay cards from MongoDB to the final
-  event, and stops the upstream request when the visitor closes the page. Limits in Redis: 10
+  Server-Sent Events. The API passes the stream through, adds stay cards and host cards (the hosts
+  with the most active stays in the asked city) from MongoDB to the final event, and stops the upstream request when the visitor closes the page. Limits in Redis: 10
   questions per minute per IP and 1,000 per day in total.
 
 ## Scheduled jobs
@@ -126,8 +126,8 @@ npm run start:dev:batch       # batch jobs, in a second terminal
 npm test
 ```
 
-19 unit tests cover the member role rules and the assistant proxy: the rate limiter, the
-Server-Sent Events parser, input validation and the service. CI runs lint, both builds and the tests
+21 unit tests cover the member role rules and the assistant proxy: the rate limiter, the
+Server-Sent Events parser, input validation, the service and its stay and host cards. CI runs lint, both builds and the tests
 on every pull request.
 
 ## Deploy
